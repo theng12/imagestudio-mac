@@ -1,0 +1,1543 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Image Studio KH</title>
+  <!-- Cache-busters: bump the ?v= string whenever the static assets are updated
+       so Pinokio's webview can't keep serving a stale build. The backend also
+       sends Cache-Control: no-store for these paths as a belt-and-braces. -->
+  <link rel="stylesheet" href="/assets/style.css?v=logo-1" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <!-- Order matters: app.js MUST come before alpine.min.js so that the
+       global studio() function exists when Alpine evaluates x-data. With
+       defer, Alpine otherwise starts immediately when its own tag executes,
+       which is before app.js loads. prompts.js sets window.SAMPLE_PROMPTS
+       and must load before app.js references it. -->
+  <script defer src="/assets/prompts.js?v=queue-1"></script>
+  <script defer src="/assets/app.js?v=queue-1"></script>
+  <script defer src="/assets/alpine.min.js?v=queue-1"></script>
+</head>
+<body x-data="studio()" x-init="init()">
+
+  <header class="topbar">
+    <div class="brand">
+      <img class="brand-mark" src="/assets/icon.png?v=logo-1" alt="Image Studio logo" />
+      <span class="brand-name">Image Studio</span>
+      <span class="brand-tag">Mac · Apple Silicon</span>
+    </div>
+    <nav class="tabs">
+      <button :class="{active: tab==='generate'}" @click="tab='generate'">Generate</button>
+      <button :class="{active: tab==='models'}" @click="tab='models'">Models</button>
+      <button :class="{active: tab==='downloads'}" @click="tab='downloads'">
+        Downloads
+        <span class="badge" x-show="activeDownloadCount > 0" x-text="activeDownloadCount"></span>
+      </button>
+      <button :class="{active: tab==='imports'}" @click="tab='imports'; scanImports()">Import</button>
+      <button :class="{active: tab==='api'}" @click="tab='api'">API</button>
+      <button :class="{active: tab==='settings'}" @click="tab='settings'; refreshSettings()">Settings</button>
+    </nav>
+    <div class="status">
+      <span class="dot" :class="health.ok ? 'ok' : 'bad'"></span>
+      <span x-text="health.ok ? 'online' : 'offline'"></span>
+    </div>
+  </header>
+
+  <!-- ─────────── GENERATE ─────────── -->
+  <main x-show="tab==='generate'" class="page generate-page">
+    <section class="page-head">
+      <h1>Generate</h1>
+      <p class="muted">
+        Text-to-image first; img2img and edit modes coming next. Aspect ratios are
+        ~1 megapixel each so latency is comparable across them.
+      </p>
+    </section>
+
+    <!-- Generation engine not installed -->
+    <div class="banner warn" x-show="!gen.available" x-cloak>
+      <div>
+        <strong>Generation engine not installed.</strong>
+        <p class="muted">
+          Click <strong>Install Generation</strong> in the Pinokio sidebar (left edge of the
+          Pinokio window, the ✨ wand icon). That step installs <em>mflux</em> — the Python
+          library that actually runs FLUX models on Apple Silicon — plus its dependencies
+          (<em>MLX</em>, <em>transformers</em>, <em>safetensors</em>). It's a multi-GB one-time download.
+          After it finishes, Stop → Start the server and this banner will disappear.
+        </p>
+        <p class="error-text" x-show="gen.error" x-text="gen.error"></p>
+      </div>
+    </div>
+
+    <!-- No cached models — point users at the Models tab -->
+    <div class="banner info" x-show="gen.available && cachedModels.length === 0" x-cloak>
+      <div>
+        <strong>No models cached yet.</strong>
+        <p class="muted">
+          Go to <a class="link-accent" @click="tab='models'">Models</a> and pick one to download —
+          on a slow internet, the MLX 4-bit options (~2 GB) finish fastest.
+          Already have FLUX weights on disk from another app? Use
+          <a class="link-accent" @click="tab='imports'">Import</a> to bring them in without re-downloading.
+        </p>
+      </div>
+    </div>
+
+    <!-- Soft hint when at least one is cached -->
+    <p class="muted soft-hint" x-show="gen.available && cachedModels.length > 0" x-cloak>
+      💡 Want a different model? Browse and download more in
+      <a class="link-accent" @click="tab='models'">Models</a>, or
+      <a class="link-accent" @click="tab='imports'">Import</a> weights you already have.
+    </p>
+
+    <!-- ─── Dependency diagnostics (collapsible) ─── -->
+    <details class="diag" :open="diag.any_missing">
+      <summary>
+        <span class="diag-summary-text">
+          🩺 Dependency check
+          <span class="muted small">
+            <span x-show="diag.total_engines"
+                  x-text="diag.ready_count + ' / ' + diag.total_engines + ' engines ready'"></span>
+            <span x-show="diag.any_missing" class="diag-warn"> · some packages missing</span>
+          </span>
+        </span>
+        <button class="btn ghost small" @click.prevent="refreshDiagnostics()">↻ Re-check</button>
+      </summary>
+      <div class="diag-body">
+        <p class="muted">
+          Each engine needs a specific set of packages. If something below shows ❌, run
+          <strong>Install Generation</strong> from the Pinokio sidebar (shown as <strong>Reinstall Generation</strong> if already run once — same button), then <strong>Stop → Start</strong> the server.
+          <span x-show="diag.device">Backend reports device <code x-text="diag.device"></code>.</span>
+        </p>
+
+        <details class="diag-explainer">
+          <summary>Why does each model need its own packages?</summary>
+          <div class="diag-explainer-body">
+            <p>
+              Different model families use different inference libraries.
+              <strong>FLUX 1 / FLUX 2 / Klein</strong> run through <code>mflux</code> on MLX,
+              <strong>Qwen-Image-Edit</strong> uses <code>transformers</code>,
+              and future engines may add their own.
+              The catalog mixes models from different ecosystems so you can pick the
+              right tool for each task — but each library has to be importable for
+              that model's engine to run.
+            </p>
+            <p>
+              <strong>Good news: installation is a one-time thing.</strong> Click
+              <strong>Install Generation</strong> in the Pinokio sidebar once, restart
+              the server, and every model in those families works permanently. You
+              only ever re-install after <strong>Reset</strong> or on a new machine.
+            </p>
+            <p>
+              The "Install Generation" script bundles all the libraries together for
+              simplicity. If you only ever plan to use one engine, the extra packages
+              still install but they're idle — they don't slow anything down.
+            </p>
+          </div>
+        </details>
+
+        <h4 class="diag-h4">Packages</h4>
+        <table class="diag-table">
+          <thead><tr><th></th><th>Package</th><th>Version</th><th>Role</th></tr></thead>
+          <tbody>
+            <template x-for="p in (diag.packages || [])" :key="p.package">
+              <tr :class="{'diag-row-bad': !p.installed}">
+                <td><span x-text="p.installed ? '✅' : '❌'"></span></td>
+                <td><code x-text="p.package"></code></td>
+                <td class="diag-version">
+                  <span x-show="p.installed" x-text="p.version || '(no __version__)'"></span>
+                  <span x-show="!p.installed" class="muted small" x-text="p.error || 'not importable'"></span>
+                </td>
+                <td class="muted small" x-text="p.role"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <h4 class="diag-h4">Engines</h4>
+        <table class="diag-table">
+          <thead><tr><th></th><th>Family</th><th>Status</th><th>Requires</th></tr></thead>
+          <tbody>
+            <template x-for="e in (diag.engines || [])" :key="e.family">
+              <tr :class="{'diag-row-bad': !e.ready && !e.deps_ok, 'diag-row-pending': e.deps_ok && !e.wired}">
+                <td>
+                  <span x-show="e.ready">✅</span>
+                  <span x-show="!e.ready && e.deps_ok && !e.wired" title="Packages installed; worker ships in a future phase">🕓</span>
+                  <span x-show="!e.deps_ok">⛔</span>
+                </td>
+                <td><code x-text="e.family"></code></td>
+                <td>
+                  <span x-show="e.ready" class="diag-ok">Ready</span>
+                  <span x-show="!e.ready && e.deps_ok && !e.wired" class="diag-pending">
+                    Worker ships in a future phase (packages OK)
+                  </span>
+                  <span x-show="!e.deps_ok" class="diag-bad">
+                    Missing:
+                    <template x-for="m in e.missing" :key="m">
+                      <code x-text="m"></code>
+                    </template>
+                  </span>
+                </td>
+                <td class="muted small">
+                  <template x-for="r in e.requires" :key="r">
+                    <span><code x-text="r"></code> </span>
+                  </template>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <!-- Subtabs -->
+    <nav class="subtabs">
+      <button :class="{active: gen.mode==='txt2img'}" @click="setMode('txt2img')">Text → Image</button>
+      <button :class="{active: gen.mode==='img2img'}" @click="setMode('img2img')">Image → Image</button>
+      <button :class="{active: gen.mode==='edit'}" @click="setMode('edit')">Image Edit</button>
+    </nav>
+
+    <div class="gen-grid">
+      <!-- Left column: controls -->
+      <div class="gen-controls">
+
+        <!-- Model picker (cached + capability-filtered for the current mode) -->
+        <section class="control-block">
+          <label>Model</label>
+          <select x-model="gen.repo">
+            <template x-for="m in modeCompatibleModels" :key="m.repo">
+              <option :value="m.repo"
+                      :disabled="!isModelReady(m.repo)"
+                      x-text="modelOptionLabel(m)"></option>
+            </template>
+          </select>
+
+          <!-- Per-model dependency warning -->
+          <div class="banner warn dep-warn"
+               x-show="gen.repo && !isModelReady(gen.repo)"
+               x-cloak>
+            <div>
+              <strong>This model needs additional packages.</strong>
+              <p class="muted">
+                Missing:
+                <template x-for="dep in modelMissingDeps(gen.repo)" :key="dep">
+                  <code class="dep-chip" x-text="dep"></code>
+                </template>
+              </p>
+              <p class="muted">
+                Different model families use different inference libraries.
+                Image Studio mixes them so you can pick the right one per task — but
+                each library has to be importable for that model's engine to run.
+              </p>
+              <p class="muted">
+                <strong>One-time fix</strong> (per launcher): click <strong>Install Generation</strong>
+                in the Pinokio sidebar, then <strong>Stop → Start</strong> this server.
+                After that, every model in this family works permanently. See the
+                <a class="link-accent" @click.prevent="document.querySelector('details.diag')?.setAttribute('open','')">
+                  🩺 Dependency check
+                </a>
+                panel above for the full status.
+              </p>
+            </div>
+          </div>
+          <p class="muted hint" x-show="modeCompatibleModels.length === 0 && cachedModels.length > 0">
+            None of your cached models support <strong x-text="gen.mode==='edit' ? 'instruction edit' : (gen.mode==='img2img' ? 'image → image' : 'this mode')"></strong>.
+            <span x-show="gen.mode==='edit'">
+              Klein 4-bit MLX is the recommended choice — already a small download.
+              Or go to <a class="link-accent" @click="tab='models'">Models</a> to download an edit-capable one.
+            </span>
+          </p>
+          <p class="muted hint" x-show="cachedModels.length === 0">
+            No models cached yet. Download one from the Models tab first.
+          </p>
+          <p class="muted hint" x-show="selectedModel">
+            <span x-text="selectedModel?.recommended_hardware || ''"></span>
+          </p>
+        </section>
+
+        <!-- Prompt / Edit instruction -->
+        <section class="control-block">
+          <label x-text="gen.mode === 'edit' ? 'Edit instruction' : 'Prompt'"></label>
+          <textarea x-model="gen.prompt" rows="4"
+                    @keydown.cmd.enter.prevent="submitGenerate()" @keydown.ctrl.enter.prevent="submitGenerate()"
+                    :placeholder="gen.mode === 'edit' ? 'make the sky red · add sunglasses to the person · remove the car · change the season to winter' : 'A sun-drenched cafe in Lisbon at golden hour, cinematic, 35mm'"></textarea>
+          <div class="prompt-actions">
+            <button class="ghost small" @click="randomPrompt()" title="Pick a random sample prompt">
+              🎲 Random
+            </button>
+            <button class="ghost small" @click="magicPrompt()" title="Append quality + style tags">
+              ✨ Enhance
+            </button>
+            <button class="ghost small" @click="gen.prompt=''">Clear</button>
+          </div>
+          <div class="prompt-meta">
+            <span class="muted" x-text="gen.prompt.length + ' chars · ⌘↵ submits'"></span>
+            <span class="warn-text" x-show="gen.prompt.length > promptSoftLimit"
+                  x-text="'⚠ over ~' + promptSoftLimit + ' chars — the tokenizer may truncate'"></span>
+          </div>
+        </section>
+
+        <!-- Input image (img2img mode only) -->
+        <section class="control-block" x-show="gen.mode==='img2img' || gen.mode==='edit'" x-cloak>
+          <label>
+            Input image
+            <span class="muted hint inline">drag · paste · click</span>
+          </label>
+          <div class="img-drop"
+               :class="{ 'has-image': gen.inputImageUrl, 'dragging': gen.dragOver }"
+               @click="$refs.imgFileInput.click()"
+               @dragover.prevent="gen.dragOver = true"
+               @dragenter.prevent="gen.dragOver = true"
+               @dragleave.prevent="gen.dragOver = false"
+               @drop.prevent="gen.dragOver = false; handleImageDrop($event)">
+            <template x-if="gen.inputImageUrl">
+              <div class="img-drop-preview">
+                <img :src="gen.inputImageUrl" alt="input" />
+                <button class="img-drop-clear" @click.stop="clearInputImage()" title="Remove this image">✕</button>
+                <small class="img-drop-name" x-text="gen.inputImageName"></small>
+              </div>
+            </template>
+            <template x-if="!gen.inputImageUrl">
+              <div class="img-drop-placeholder">
+                <div class="img-drop-icon">🖼️</div>
+                <p>Drop an image here, paste from clipboard, or click to pick a file.</p>
+                <small class="muted">PNG · JPG · WEBP</small>
+              </div>
+            </template>
+          </div>
+          <input type="file" x-ref="imgFileInput" accept="image/png,image/jpeg,image/webp"
+                 style="display:none"
+                 @change="handleImageFileInput($event)" />
+        </section>
+
+        <!-- Image strength (img2img mode only) -->
+        <section class="control-block" x-show="gen.mode==='img2img' || gen.mode==='edit'" x-cloak>
+          <label>
+            Image strength
+            <input type="number" min="0" max="1" step="0.01" x-model.number="gen.imageStrength" class="num-input" />
+          </label>
+          <input type="range" min="0" max="1" step="0.01" x-model.number="gen.imageStrength" />
+          <p class="muted hint">
+            How aggressively to denoise the input. <strong>0</strong> = keep the input almost exactly,
+            <strong>1</strong> = ignore input and pure-generate from prompt. Try 0.5–0.7 for noticeable changes that still feel like the original.
+          </p>
+        </section>
+
+        <!-- Negative prompt -->
+        <section class="control-block">
+          <label>
+            Negative prompt
+            <span class="muted hint inline">optional</span>
+          </label>
+          <textarea x-model="gen.negativePrompt" rows="2"
+                    placeholder="blurry, low quality, watermark, text"></textarea>
+          <p class="muted hint" x-show="!selectedModel?.apple_optimized">
+            Used with classifier-free guidance on dev models.
+          </p>
+          <p class="muted hint" x-show="selectedModel?.apple_optimized || selectedModel?.family === 'flux2-klein' || selectedModel?.family === 'flux1-schnell'">
+            Distilled klein/schnell models pin guidance to 1.0 — negative has little effect here. Kept for parity with dev models.
+          </p>
+        </section>
+
+        <!-- Aspect ratio -->
+        <section class="control-block">
+          <label>Aspect ratio</label>
+          <div class="aspect-grid">
+            <template x-for="p in gen.presets" :key="p.ratio">
+              <button class="aspect"
+                      :class="{active: gen.aspect===p.ratio}"
+                      @click="pickAspect(p)">
+                <span class="ar-shape" :style="aspectShape(p)"></span>
+                <span class="ar-label" x-text="p.ratio"></span>
+                <span class="ar-px" x-text="p.width+'×'+p.height"></span>
+              </button>
+            </template>
+          </div>
+        </section>
+
+        <!-- Steps -->
+        <section class="control-block">
+          <label>
+            Steps
+            <input type="number" min="1" max="50" step="1" x-model.number="gen.steps" class="num-input" />
+          </label>
+          <input type="range" min="1" max="50" x-model.number="gen.steps" />
+          <p class="muted hint">
+            Distilled models (klein, schnell) work great at 4. Dev models want 20–30.
+          </p>
+          <details class="control-help">
+            <summary>What is Steps?</summary>
+            <p>
+              The image starts as random noise. Each <em>step</em> nudges it a little closer
+              to matching your prompt. More steps generally means more refined output —
+              with diminishing returns. Distilled models like FLUX.2 klein and FLUX.1 schnell
+              are specifically trained to converge in just a handful of steps; dev models
+              need many more.
+            </p>
+          </details>
+        </section>
+
+        <!-- Guidance -->
+        <section class="control-block">
+          <label>
+            Guidance
+            <input type="number" min="0" max="10" step="0.01" x-model.number="gen.guidance" class="num-input" />
+          </label>
+          <input type="range" min="0" max="10" step="0.05" x-model.number="gen.guidance" />
+          <p class="muted hint">
+            Distilled klein ignores guidance internally (forced to 1.0). Tune for dev models.
+          </p>
+          <details class="control-help">
+            <summary>What is Guidance?</summary>
+            <p>
+              Classifier-Free Guidance (CFG) scale. Higher values make the image follow
+              your prompt more strictly but reduce creativity and can produce burnt or
+              over-saturated results. Lower values are more dreamy/creative but may
+              ignore parts of your prompt. Most dev models work well at 3.5–5.0.
+              Distilled models (klein/schnell) hardcode guidance to 1.0 internally —
+              this slider is effectively ignored.
+            </p>
+          </details>
+        </section>
+
+        <!-- Seed -->
+        <section class="control-block">
+          <label>
+            Seed
+            <input type="number" x-model.number="gen.seed" placeholder="-1" class="num-input num-input-wide" />
+          </label>
+          <button class="ghost small seed-random-btn" @click="gen.seed=-1" title="Set seed to -1 so each generation gets a fresh random seed">🎲 Randomize each run</button>
+          <details class="control-help">
+            <summary>What is Seed?</summary>
+            <p>
+              The starting random number for the noise. Same seed + same prompt + same
+              settings = pixel-identical image, every time. Useful for reproducing a result
+              or tweaking a prompt while keeping the composition stable.
+              Set to <code>-1</code> to randomize per generation. After a generation completes,
+              the actual seed used is shown in the output meta — click 🔄 Reuse params on
+              a recent tile to pull that exact seed back into this field.
+            </p>
+          </details>
+        </section>
+
+        <!-- Batch -->
+        <section class="control-block">
+          <label>
+            Batch
+            <input type="number" min="1" max="8" step="1" x-model.number="gen.batchCount" class="num-input" />
+          </label>
+          <input type="range" min="1" max="8" step="1" x-model.number="gen.batchCount" />
+          <p class="muted hint">
+            Submits N generations back-to-back. Each gets a different seed (sequential
+            from the one above, or fresh random if seed = -1).
+          </p>
+          <details class="control-help">
+            <summary>What is Batch?</summary>
+            <p>
+              How many images to generate from one click. Each runs sequentially (mflux
+              can't run two generations in parallel on the same GPU). Useful for getting
+              variations of the same prompt without click-click-clicking — set batch to 4,
+              hit Generate, walk away.
+            </p>
+          </details>
+        </section>
+
+        <!-- Runtime quantization (only for non-pre-quantized models) -->
+        <section class="control-block" x-show="canRuntimeQuant">
+          <label>Runtime quantization (full checkpoints only)</label>
+          <select x-model.number="gen.quantize">
+            <option :value="null">none (full precision)</option>
+            <option :value="3">3-bit</option>
+            <option :value="4">4-bit</option>
+            <option :value="6">6-bit</option>
+            <option :value="8">8-bit</option>
+          </select>
+        </section>
+
+        <!-- LoRAs -->
+        <section class="control-block">
+          <label>
+            LoRAs
+            <button class="link small" @click="refreshLoras()">↻ refresh</button>
+          </label>
+          <p class="muted hint" x-show="loras.length === 0">
+            Drop <code>*.safetensors</code> into <code>app/lora/</code> and click refresh.
+          </p>
+          <template x-for="l in loras" :key="l.path">
+            <div class="lora-row">
+              <label class="lora-check">
+                <input type="checkbox"
+                       :value="l.name"
+                       @change="toggleLora(l.name, $event.target.checked)" />
+                <span x-text="l.name"></span>
+              </label>
+              <input type="range" min="-2" max="2" step="0.01"
+                     x-show="gen.loraWeights[l.name] !== undefined"
+                     :value="gen.loraWeights[l.name] ?? 1.0"
+                     @input="gen.loraWeights[l.name] = parseFloat($event.target.value)" />
+              <input type="number" min="-2" max="2" step="0.01" class="num-input"
+                     x-show="gen.loraWeights[l.name] !== undefined"
+                     :value="gen.loraWeights[l.name] ?? 1.0"
+                     @input="gen.loraWeights[l.name] = parseFloat($event.target.value)" />
+            </div>
+          </template>
+          <details class="control-help">
+            <summary>What is a LoRA?</summary>
+            <p>
+              <strong>LoRA</strong> stands for <em>Low-Rank Adaptation</em>. It's a small extra file
+              (usually 30 MB – 300 MB) that <em>patches</em> the base model with a specific style,
+              character, or concept — without needing to retrain the whole model.
+            </p>
+            <p>
+              You stack a LoRA on top of a base model at generation time. The
+              <strong>weight</strong> (-2 to 2) controls how strongly it pulls the output toward
+              what it was trained on. Typical range is 0.5–1.5; negative weights subtract
+              the trait. You can stack multiple LoRAs at once and they'll combine.
+            </p>
+            <p>
+              Where to find them: <a href="https://civitai.com" target="_blank" rel="noopener" class="link-accent">civitai.com</a>
+              hosts most community LoRAs; search for ones tagged with the model family
+              you're using (FLUX). Download the <code>.safetensors</code> file and drop it
+              into <code>app/lora/</code> on the server, then click ↻ refresh above.
+            </p>
+            <p class="muted">
+              <em>Note:</em> not every LoRA is compatible with every base model. A LoRA trained
+              on FLUX.1 dev usually won't work on FLUX.2 klein. Check the LoRA's page for
+              compatibility info.
+            </p>
+          </details>
+        </section>
+
+        <button class="primary large generate-btn"
+                @click="submitGenerate()"
+                :disabled="!canSubmit">
+          <span x-show="!gen.submitting && gen.batchCount === 1">Generate</span>
+          <span x-show="!gen.submitting && gen.batchCount > 1" x-text="'Generate ×' + gen.batchCount"></span>
+          <span x-show="gen.submitting">Queueing…</span>
+        </button>
+        <!-- Hint that submitting again while a job runs queues another -->
+        <p class="muted hint" x-show="gen.busy && canSubmit" x-cloak>
+          💡 A job is running. Click <strong>Generate</strong> again to queue another — backend serializes them automatically.
+        </p>
+
+        <!-- ─── Queue panel — pending + running jobs with per-job cancel ─── -->
+        <section class="queue-panel" x-show="hasPending" x-cloak>
+          <div class="queue-header">
+            <h3>
+              ⏳ Queue
+              <span class="muted small">
+                <span x-show="runningJob"><span x-text="queuedCount"></span> queued · 1 running</span>
+                <span x-show="!runningJob"><span x-text="queuedCount"></span> queued</span>
+              </span>
+            </h3>
+          </div>
+          <div class="queue-list">
+            <template x-for="job in pendingJobs" :key="job.id">
+              <div class="queue-row" :class="{'queue-row-running': job.state === 'running'}">
+                <div class="queue-state-icon">
+                  <span x-show="job.state === 'running'" class="queue-spinner">●</span>
+                  <span x-show="job.state === 'queued'" class="queue-clock">◯</span>
+                </div>
+                <div class="queue-row-meta">
+                  <div class="queue-row-text" x-text="truncateText(job.params?.prompt || '(no prompt)', 80)"></div>
+                  <div class="queue-row-tags muted small">
+                    <span x-text="historyModelLabel(job)"></span>
+                    <span x-show="historyParamsLabel(job)" x-text="' · ' + historyParamsLabel(job)"></span>
+                    <span x-show="job.state === 'running'" class="queue-running-label"> · running…</span>
+                    <span x-show="job.state === 'queued'" class="queue-queued-label"> · waiting</span>
+                  </div>
+                </div>
+                <button class="btn ghost small" @click="cancelPending(job)"
+                        :title="job.state === 'running' ? 'Cancel the running job' : 'Cancel this queued job'">✕ Cancel</button>
+              </div>
+            </template>
+          </div>
+        </section>
+      </div>
+
+      <!-- Right column: output -->
+      <div class="gen-output">
+        <div class="output-frame" :style="outputFrameStyle">
+          <template x-if="gen.currentJob && gen.currentJob.output_url">
+            <img :src="gen.currentJob.output_url + '?t=' + gen.currentJob.id" alt="generated image" />
+          </template>
+          <template x-if="!gen.currentJob || !gen.currentJob.output_url">
+            <div class="output-placeholder">
+              <span x-show="!gen.currentJob">Output appears here</span>
+              <span x-show="gen.currentJob && gen.currentJob.state==='running'">
+                Generating… <span x-text="(gen.currentJob?.current_step ?? 0) + '/' + (gen.currentJob?.total_steps ?? 0)"></span>
+              </span>
+              <span x-show="gen.currentJob && gen.currentJob.state==='error'" class="error-text"
+                    x-text="gen.currentJob?.error ?? ''"></span>
+              <span x-show="gen.currentJob && gen.currentJob.state==='cancelled'">Cancelled.</span>
+            </div>
+          </template>
+        </div>
+
+        <div class="output-meta" x-show="gen.currentJob" x-cloak>
+          <div class="meta-row">
+            <span class="chip" :class="genStateChipClass(gen.currentJob?.state)" x-text="gen.currentJob?.state"></span>
+            <span class="meta-item" x-show="gen.currentJob?.state==='running'">
+              <small x-text="genProgressLabel()"></small>
+            </span>
+            <span class="meta-item" x-show="gen.currentJob">
+              <small x-text="'⏱ ' + formatDuration(elapsedFor(gen.currentJob))"></small>
+            </span>
+            <span class="meta-item" x-show="gen.currentJob?.params?.width">
+              <small x-text="gen.currentJob?.params?.width + ' × ' + gen.currentJob?.params?.height"></small>
+            </span>
+            <span class="meta-item" x-show="gen.currentJob?.resolved_seed != null">
+              <small>seed:&nbsp;<code x-text="gen.currentJob?.resolved_seed"></code></small>
+            </span>
+            <button class="link danger" x-show="gen.currentJob?.state==='running'"
+                    @click="cancelGenerate(gen.currentJob?.id)">Cancel</button>
+          </div>
+
+          <div class="result-actions" x-show="gen.currentJob?.state==='done' && gen.currentJob?.output_url">
+            <a class="primary small"
+               :href="gen.currentJob?.output_url"
+               :download="downloadFilename(gen.currentJob)"
+               title="Save the PNG to your computer">⬇ Download</a>
+            <button class="ghost small" @click="reuseParams(gen.currentJob)" title="Copy these settings back into the form">🔄 Reuse params</button>
+            <button class="ghost small" @click="copyImageUrl(gen.currentJob)" title="Copy the image URL to clipboard">🔗 Copy URL</button>
+            <button class="ghost small" x-show="gen.currentJob?.output_path" @click="revealInFolder(gen.currentJob.output_path)" title="Open this image in Finder">📂 Reveal</button>
+          </div>
+
+          <details class="meta-details" x-show="gen.currentJob?.params">
+            <summary>Parameters used</summary>
+            <pre x-text="JSON.stringify(gen.currentJob?.params, null, 2)"></pre>
+          </details>
+        </div>
+
+        <div class="recent-jobs" x-show="historyJobs.length > 0">
+          <div class="recent-head">
+            <h3>
+              Recent
+              <span class="muted small" x-text="'(' + historyJobs.length + ')'"></span>
+            </h3>
+            <button class="link small" @click="clearHistory()" title="Delete all past jobs from this list">Clear history</button>
+          </div>
+          <div class="recent-grid">
+            <template x-for="j in pagedHistoryJobs" :key="j.id">
+              <div class="recent-tile"
+                   :class="{active: gen.currentJob?.id === j.id}"
+                   @click="gen.currentJob = j"
+                   :title="(recentTileTitle ? recentTileTitle(j) : '') + '\n' + historyModelLabel(j) + (historyParamsLabel(j) ? ' · ' + historyParamsLabel(j) : '')">
+                <template x-if="j.output_url">
+                  <img :src="j.output_url + '?t=' + j.id" alt="" />
+                </template>
+                <template x-if="!j.output_url">
+                  <div class="recent-empty" x-text="j.state"></div>
+                </template>
+                <span class="tile-duration"
+                      x-show="j.duration_seconds != null"
+                      x-text="'⏱ ' + formatDuration(j.duration_seconds)"></span>
+                <button class="tile-reuse"
+                        x-show="j.state==='done' && j.params"
+                        @click.stop="reuseParams(j)"
+                        title="Reuse these settings">🔄</button>
+              </div>
+            </template>
+          </div>
+
+          <!-- Pagination -->
+          <div class="history-pager" x-show="historyPageCount > 1" x-cloak>
+            <button class="btn ghost small"
+                    :disabled="historyPage === 0"
+                    @click="historyPrevPage()">‹ Prev</button>
+            <span class="muted small">
+              Page <span x-text="historyPage + 1"></span> of <span x-text="historyPageCount"></span>
+            </span>
+            <button class="btn ghost small"
+                    :disabled="historyPage >= historyPageCount - 1"
+                    @click="historyNextPage()">Next ›</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ─────────── MODELS ─────────── -->
+  <main x-show="tab==='models'" class="page">
+    <section class="page-head">
+      <h1>Models</h1>
+      <p class="muted">
+        Greyed-out rows are not yet downloaded. Click <em>Download</em> to fetch one to
+        your HF cache. Downloads resume automatically if interrupted.
+      </p>
+
+      <!-- ─── Your-Mac banner (Tier 1 hardware fit) ─── -->
+      <!-- Reads /api/system once on init. Shows chip + RAM so the per-card
+           fit chips have a clear "compared to what?" anchor. -->
+      <div class="your-mac-banner" x-show="system.unified_memory_gb" x-cloak>
+        <span class="your-mac-icon">🖥</span>
+        <span>
+          Detected:
+          <strong x-text="system.chip || 'Apple Silicon'"></strong>
+          ·
+          <strong><span x-text="system.unified_memory_gb"></span> GB</strong> unified memory
+        </span>
+        <span class="muted small">
+          — fit chips below compare each model's memory floor against your hardware
+        </span>
+      </div>
+
+      <details class="primer">
+        <summary>📚 New here? What does 4B / 4-bit / MLX / gated mean?</summary>
+        <div class="primer-body">
+          <h3>Anatomy of a model name</h3>
+          <p>A name like <code>FLUX.2 klein 4B — MLX 4-bit</code> tells you four things:</p>
+          <ul>
+            <li><strong>FLUX.2 klein</strong> — the model family (klein is a distilled, fast variant of FLUX.2)</li>
+            <li><strong>4B</strong> — 4 billion parameters; the "size" of the model. Bigger usually means more detail and broader knowledge but more memory and slower generation.</li>
+            <li><strong>MLX</strong> — Apple's machine learning framework. Models marked MLX are pre-quantized and tuned for Apple Silicon's unified memory; they load fast and use memory efficiently.</li>
+            <li><strong>4-bit</strong> — how precisely each number in the model is stored.</li>
+          </ul>
+
+          <h3>What does "X-bit" mean for quality?</h3>
+          <p>
+            The model's billions of numbers can be stored at different precisions. Lower-bit
+            versions are smaller files and use less memory, at a small quality cost.
+          </p>
+          <ul>
+            <li><strong>Full</strong> (no bit tag) — the original 16-bit-per-number weights. Highest fidelity, biggest file.</li>
+            <li><strong>8-bit</strong> — about half the size of full. Near-original quality. Sweet spot if you have plenty of memory.</li>
+            <li><strong>6-bit</strong> — smaller still. Subtle quality loss, usually fine for most prompts.</li>
+            <li><strong>4-bit</strong> — about a quarter the size. Visible quality loss on close inspection but the speed and memory savings are huge — recommended starting point on 8–16 GB Macs.</li>
+            <li><strong>3-bit</strong> — smallest. Noticeable quality loss. Use only when memory is tight.</li>
+          </ul>
+
+          <h3>Distilled vs full ("klein/schnell" vs "dev")</h3>
+          <p>
+            Some FLUX models are <em>distilled</em>: trained to produce a finished image in just
+            1–4 denoising <em>steps</em>. They're fast but ignore the <em>guidance</em> control internally
+            (locked to 1.0). Examples: <code>FLUX.2 klein</code>, <code>FLUX.1 schnell</code>.
+          </p>
+          <p>
+            <em>Dev</em> models (<code>FLUX.1 dev</code>, <code>FLUX.2 dev</code>) need 20–30 steps and respond
+            to guidance properly. Higher quality, slower, larger.
+          </p>
+
+          <h3>What does each chip mean?</h3>
+          <ul>
+            <li><span class="chip ok">cached</span> All files for this model are on disk and ready to generate from.</li>
+            <li><span class="chip warn">partial</span> Some files have downloaded but the model isn't usable yet. Click Download again to resume.</li>
+            <li><span class="chip">not downloaded</span> No files for this model are on disk. Click Download to fetch them.</li>
+            <li><span class="chip neutral">gated</span> The model's repo on Hugging Face requires you to accept a license and provide a personal access token. You'll be prompted for the token in the Download dialog.</li>
+            <li><span class="chip neutral">mlx</span> Pre-quantized for Apple Silicon. Loads fast, runs efficiently on M-series chips. If you see this chip, it's a good pick for Mac.</li>
+          </ul>
+
+          <h3>Which one should I pick first?</h3>
+          <p>
+            On any Apple Silicon Mac with ≥8 GB unified memory: start with
+            <code>AITRADER/FLUX2-klein-4B-mlx-4bit</code>. ~2.3 GB on disk, fast loads,
+            ungated. If quality matters more than speed and you have ≥16 GB: try the MLX 8-bit.
+          </p>
+        </div>
+      </details>
+    </section>
+
+    <!-- ─── Library filter toolbar ─── -->
+    <section class="library-toolbar" x-cloak>
+      <div class="library-toolbar-row">
+        <input type="search"
+               class="library-search"
+               x-model="modelFilters.search"
+               placeholder="🔍 Search by name, repo, or 'best for'…">
+        <select x-model="modelFilters.sortBy" class="library-sort">
+          <option value="default">Sort: default (family · size)</option>
+          <option value="name">Sort: name (A–Z)</option>
+          <option value="size-asc">Sort: size (small → large)</option>
+          <option value="size-desc">Sort: size (large → small)</option>
+        </select>
+        <div class="library-meta">
+          <span class="muted small" x-text="'Showing ' + filteredModelTotalCount + ' of ' + models.length"></span>
+          <button class="btn ghost small" x-show="hasActiveFilters" @click="clearAllFilters()">✕ Clear filters</button>
+          <!-- Bulk expand/collapse — operates on the currently-filtered list -->
+          <button class="btn ghost small" @click="expandAllVisible()" title="Show details on every visible card">▾ Expand all</button>
+          <button class="btn ghost small" @click="collapseAllVisible()" title="Hide details on every card">▴ Collapse all</button>
+        </div>
+      </div>
+
+      <div class="library-toolbar-row filter-chips-row">
+        <span class="filter-label">Family</span>
+        <template x-for="fam in availableFamilies" :key="fam.id">
+          <button class="chip filter-chip"
+                  :class="{active: isFamilyFiltered(fam.id)}"
+                  @click="toggleFamilyFilter(fam.id)"
+                  x-text="fam.label"></button>
+        </template>
+      </div>
+
+      <div class="library-toolbar-row filter-chips-row">
+        <span class="filter-label">Status</span>
+        <button class="chip filter-chip status-cached"
+                :class="{active: isStatusFiltered('cached')}"
+                @click="toggleStatusFilter('cached')">✓ Cached</button>
+        <button class="chip filter-chip"
+                :class="{active: isStatusFiltered('partial')}"
+                @click="toggleStatusFilter('partial')">⏳ Partial</button>
+        <button class="chip filter-chip"
+                :class="{active: isStatusFiltered('absent')}"
+                @click="toggleStatusFilter('absent')">⚪ Not downloaded</button>
+        <button class="chip filter-chip status-ready"
+                :class="{active: isStatusFiltered('engine-ready')}"
+                @click="toggleStatusFilter('engine-ready')"
+                title="Cached AND the engine's runtime packages are installed">🚀 Ready to generate</button>
+      </div>
+
+      <div class="library-toolbar-row filter-chips-row" x-show="availableCapabilities.length > 0">
+        <span class="filter-label">Capability</span>
+        <template x-for="cap in availableCapabilities" :key="cap">
+          <button class="chip filter-chip"
+                  :class="{active: isCapFiltered(cap)}"
+                  @click="toggleCapabilityFilter(cap)"
+                  x-text="cap"></button>
+        </template>
+      </div>
+
+      <!-- ─── Hardware + format filters (v1.1.2) ─── -->
+      <div class="library-toolbar-row filter-chips-row">
+        <span class="filter-label">Quick</span>
+        <button class="chip filter-chip filter-chip-mlx"
+                :class="{active: modelFilters.mlxOnly}"
+                @click="toggleMlxFilter()"
+                title="Show only models pre-quantized for Apple Silicon's MLX framework — fastest loads, smallest footprint on M-series Macs.">
+          🍎 Apple Silicon (MLX) only
+        </button>
+        <button class="chip filter-chip filter-chip-fit"
+                :class="{active: modelFilters.fitsMyMac}"
+                :disabled="!system.unified_memory_gb"
+                @click="toggleFitsMyMacFilter()"
+                :title="system.unified_memory_gb
+                          ? ('Hide models that exceed your ' + system.unified_memory_gb + ' GB unified memory. \"Tight\" models still show.')
+                          : 'Hardware detection unavailable.'">
+          🖥 Fits my Mac
+          <span class="muted small" x-show="system.unified_memory_gb"
+                x-text="'(' + system.unified_memory_gb + ' GB)'"></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Empty state when filters return nothing -->
+    <!-- Lists every active filter so you can see what cut the results and
+         tap individual filters off without losing the others. -->
+    <div class="library-empty" x-show="filteredModelTotalCount === 0 && models.length > 0" x-cloak>
+      <p class="muted">No models match your filters.</p>
+      <p class="library-empty-active-filters" x-show="activeFilterSummary().length > 0">
+        <span class="muted small">Active filters (click to remove):</span>
+        <template x-for="af in activeFilterSummary()" :key="af.label">
+          <button class="chip library-empty-chip"
+                  @click="af.removeFn()"
+                  :title="'Remove this filter: ' + af.label">
+            <span x-text="af.label"></span>
+            <span class="library-empty-chip-x">✕</span>
+          </button>
+        </template>
+      </p>
+      <button class="btn ghost" @click="clearAllFilters()">✕ Clear all filters</button>
+    </div>
+
+    <!-- Family sections — only render families that have surviving models -->
+    <template x-for="family in Object.values(families).filter(f => (filteredModelsByFamily[f.id]||[]).length > 0)" :key="family.id">
+      <section class="family">
+        <header class="family-head">
+          <button class="family-collapse-btn"
+                  @click="toggleFamilyCollapsed(family.id)"
+                  :title="isFamilyCollapsed(family.id) ? 'Expand' : 'Collapse'"
+                  x-text="isFamilyCollapsed(family.id) ? '▸' : '▾'"></button>
+          <div class="family-head-text">
+            <h2>
+              <span x-text="family.label"></span>
+              <span class="muted small" x-text="'(' + (filteredModelsByFamily[family.id]||[]).length + ')'"></span>
+            </h2>
+            <p class="muted" x-text="family.summary" x-show="!isFamilyCollapsed(family.id)"></p>
+          </div>
+        </header>
+
+        <div x-show="!isFamilyCollapsed(family.id)" x-cloak>
+          <details class="how">
+            <summary>How to use this family</summary>
+            <p x-text="family.how_to_use"></p>
+          </details>
+
+          <div class="model-list">
+          <template x-for="m in modelsByFamily[family.id] || []" :key="m.repo">
+            <article class="model-card" :class="cardClass(m)">
+              <div class="model-meta">
+                <h3>
+                  <span x-text="m.label"></span>
+                  <span class="chip"
+                    :class="cacheChipClass(m.cache.state)"
+                    :title="chipExplain(m.cache.state)"
+                    x-text="cacheChipLabel(m.cache.state)"></span>
+                  <span class="chip neutral" x-show="m.gated"
+                    title="Hugging Face requires you to accept a license and provide a personal access token before downloading this repo.">gated</span>
+                  <span class="chip neutral" x-show="m.apple_optimized"
+                    title="Pre-quantized for Apple Silicon's MLX framework. Loads fast and uses unified memory efficiently on M-series chips.">MLX</span>
+                  <!-- Fit chip — green / yellow / red against detected RAM -->
+                  <span class="chip"
+                        x-show="m.fit && m.fit.state"
+                        :class="'fit-' + (m.fit?.state || 'unknown')"
+                        :title="m.fit?.hint"
+                        x-text="fitChipLabel(m.fit)"></span>
+                </h3>
+                <p class="repo"><code x-text="m.repo"></code></p>
+                <p class="size-line">
+                  <span class="size-big" x-text="formatGb(m.size_gb)"></span>
+                  <span class="muted">download</span>
+                  ·
+                  <span class="muted" x-text="'≥' + m.min_unified_memory_gb + ' GB unified mem'"></span>
+                </p>
+                <p class="hw" x-text="m.recommended_hardware"></p>
+                <p class="capabilities-row" x-show="m.capabilities && m.capabilities.length">
+                  <template x-for="c in (m.capabilities || [])" :key="c">
+                    <span class="chip cap" :title="capabilityHint(c)" x-text="capabilityLabel(c)"></span>
+                  </template>
+                  <!-- Engine status chip — 3 states: ready / deps-ok-but-not-wired / missing deps. -->
+                  <span class="chip engine-ready"
+                        x-show="m.cache.state==='cached' && isModelReady(m.repo)"
+                        title="This model's engine is installed and wired up. Ready to generate.">
+                    ✓ engine ready
+                  </span>
+                  <span class="chip engine-pending"
+                        x-show="m.cache.state==='cached' && !isModelReady(m.repo) && modelDepsOk(m.repo)"
+                        title="Packages are installed, but the backend worker for this family isn't shipped yet. Coming in a future Phase.">
+                    🕓 worker in roadmap
+                  </span>
+                  <span class="chip engine-missing"
+                        x-show="m.cache.state==='cached' && !modelDepsOk(m.repo)"
+                        :title="'Missing packages: ' + (modelMissingDeps(m.repo) || []).join(', ') + '. Click for details.'"
+                        @click="tab='generate'">
+                    ⚠ engine needs install
+                  </span>
+                </p>
+                <!-- ─── Collapsible details (v1.1.2) ─── -->
+                <!-- Cards default to compact; the toggle below expands to show
+                     best_for + use_cases + saved-loc. Keeps the gallery
+                     scannable when there are 20+ models on screen. -->
+                <div class="model-details" x-show="isModelExpanded(m.repo)" x-cloak>
+                  <p class="best-for" x-show="m.best_for">
+                    <strong>Best for:</strong> <span x-text="m.best_for"></span>
+                  </p>
+
+                  <!-- Structured use cases — ✅ good / ⚠️ weak / ❌ avoid -->
+                  <ul class="use-case-list" x-show="m.use_cases && m.use_cases.length > 0">
+                    <template x-for="uc in (m.use_cases || [])" :key="uc.text">
+                      <li :class="'use-case-' + uc.kind">
+                        <span class="use-case-icon" x-text="useCaseIcon(uc.kind)"></span>
+                        <span x-text="uc.text"></span>
+                      </li>
+                    </template>
+                  </ul>
+                  <p class="saved-loc" x-show="m.cache.state==='cached' && m.cache.path">
+                    <small>📁 Saved at <code x-text="m.cache.path"></code></small>
+                    <button class="link small" @click="revealInFolder(m.cache.path)" title="Open this folder in Finder">📂 Reveal in Finder</button>
+                  </p>
+                </div>
+
+                <!-- Toggle — always visible, label flips based on state -->
+                <button class="model-details-toggle"
+                        @click="toggleModelExpanded(m.repo)"
+                        :title="isModelExpanded(m.repo) ? 'Hide details' : 'Show \"best for\", use cases, and saved location'">
+                  <span x-show="!isModelExpanded(m.repo)">▾ Show details</span>
+                  <span x-show="isModelExpanded(m.repo)">▴ Hide details</span>
+                </button>
+              </div>
+              <div class="model-actions">
+                <template x-if="m.cache.state === 'cached'">
+                  <span class="ok-text">✓ cached</span>
+                </template>
+
+                <template x-if="m.cache.state !== 'cached' && !m.active_download">
+                  <button class="primary" @click="confirmDownload(m)">
+                    <span>⬇</span> Download
+                  </button>
+                </template>
+
+                <template x-if="m.active_download">
+                  <div class="dl-inline">
+                    <div class="bar"><div class="bar-fill" :style="`width:${m.active_download.percent || 0}%`"></div></div>
+                    <small x-text="downloadCaption(m.active_download)"></small>
+                    <button class="link danger" @click="cancelDownload(m.active_download.id)">cancel</button>
+                  </div>
+                </template>
+              </div>
+            </article>
+          </template>
+        </div>
+        </div><!-- /family-collapse wrapper -->
+      </section>
+    </template>
+  </main>
+
+  <!-- ─────────── DOWNLOADS ─────────── -->
+  <main x-show="tab==='downloads'" class="page">
+    <section class="page-head">
+      <div class="recent-head">
+        <h1>Downloads</h1>
+        <button class="link small" x-show="finishedDownloadCount > 0"
+                @click="clearFinishedDownloads()"
+                :title="`Remove ${finishedDownloadCount} finished/errored/cancelled rows from this list. Files on disk are untouched.`">
+          Clear <span x-text="finishedDownloadCount"></span> finished
+        </button>
+      </div>
+      <p class="muted">
+        Live state across all download jobs since the server started.
+        Cancel a job to pause it — the partial files stay on disk, and starting
+        the same model again will resume from where it left off.
+      </p>
+    </section>
+
+    <div class="downloads-table">
+      <div class="row head">
+        <div>Repo</div>
+        <div>State</div>
+        <div>Progress</div>
+        <div class="actions">Actions</div>
+      </div>
+      <template x-for="j in jobs" :key="j.id">
+        <div class="row">
+          <div><code x-text="j.repo"></code></div>
+          <div>
+            <span class="chip" :class="stateChipClass(j.state)" x-text="j.state"></span>
+            <small x-show="j.error" class="error-text" x-text="j.error"></small>
+          </div>
+          <div>
+            <div class="bar"><div class="bar-fill" :style="`width:${j.percent || 0}%`"></div></div>
+            <small x-text="downloadCaption(j)"></small>
+          </div>
+          <div class="actions">
+            <button class="link danger" x-show="['queued','running','cancelling'].includes(j.state)"
+                    @click="cancelDownload(j.id)">cancel</button>
+          </div>
+        </div>
+      </template>
+      <p x-show="jobs.length === 0" class="muted empty">No downloads yet.</p>
+    </div>
+  </main>
+
+  <!-- ─────────── IMPORT ─────────── -->
+  <main x-show="tab==='imports'" class="page">
+    <section class="page-head">
+      <h1>Import existing weights</h1>
+      <p class="muted">
+        Symlinks an existing HF-cache-style folder into this server's HF cache,
+        so you don't re-download models you already have on disk. No copying.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>What's the difference between Link and Move?</h2>
+      <ul class="import-explainer">
+        <li>
+          <strong>Link</strong> creates a symlink under our HF cache pointing at the
+          source. Instant, zero copy, but if you later <em>uninstall</em> the source app,
+          the link breaks. Best when you want to keep both Pinokio apps installed
+          and share the same on-disk cache.
+        </li>
+        <li>
+          <strong>Move</strong> physically relocates the folder into our HF cache.
+          On the same disk it's an instant rename (no copy), across disks it falls back
+          to copy+delete. Afterward, the source is gone — you can safely delete the
+          old launcher entirely. Best for migrating off another launcher.
+        </li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Add by path</h2>
+      <p class="muted">
+        Paste an absolute path to a folder shaped like
+        <code>models--owner--name</code>. We'll figure out the repo from the name,
+        or you can override it.
+      </p>
+      <div class="form-row">
+        <input x-model="importForm.source_path" placeholder="/Users/you/old-hf-cache/hub/models--black-forest-labs--FLUX.1-schnell" />
+        <input x-model="importForm.repo" placeholder="owner/repo (optional)" />
+      </div>
+      <div class="form-row" style="margin-top:0">
+        <button class="primary" @click="submitImport('move')" title="Physically relocate so the source becomes free to delete">Move into HF cache</button>
+        <button class="ghost" @click="submitImport('link')" title="Create a symlink — keeps the source in place">Link only</button>
+      </div>
+
+      <!-- Inline result panel: green on success, red on error. Stays visible after the toast fades. -->
+      <div class="import-result" :class="importMessageKind" x-show="importMessage" x-cloak>
+        <p class="import-result-title" x-text="importMessage"></p>
+        <template x-if="importResult && importResult.target">
+          <div class="import-result-detail">
+            <div class="kv">
+              <span class="muted">Saved to</span>
+              <code x-text="importResult.target"></code>
+              <button class="link small" @click="copyText(importResult.target)" title="Copy destination path">copy</button>
+              <button class="link small" @click="revealInFolder(importResult.target)" title="Open this folder in Finder">📂 reveal</button>
+            </div>
+            <div class="kv" x-show="importResult.source_was">
+              <span class="muted">Moved from</span>
+              <code x-text="importResult.source_was"></code>
+            </div>
+            <div class="kv" x-show="importResult.source">
+              <span class="muted">Symlinked from</span>
+              <code x-text="importResult.source"></code>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Scan candidates</h2>
+      <p class="muted">
+        Folders listed in <code>IMAGESTUDIO_EXTRA_MODEL_DIRS</code> are searched.
+        Set this in the ENVIRONMENT file (colon-separated paths) and restart the server.
+      </p>
+      <button class="ghost" @click="scanImports()">Re-scan</button>
+
+      <div class="candidates">
+        <template x-for="c in candidates" :key="c.source_path">
+          <article class="candidate">
+            <div class="candidate-body">
+              <strong x-text="c.repo"></strong>
+              <span class="chip" x-show="c.in_catalog">in catalog</span>
+              <p><code x-text="c.source_path"></code></p>
+            </div>
+            <div class="candidate-actions">
+              <button class="primary small" @click="moveCandidate(c)" title="Migrate — source disappears, target is real">Move</button>
+              <button class="ghost small" @click="linkCandidate(c)" title="Symlink only — keep the source where it is">Link</button>
+            </div>
+          </article>
+        </template>
+        <p x-show="candidates.length === 0" class="muted empty">
+          No candidates found. Configure <code>IMAGESTUDIO_EXTRA_MODEL_DIRS</code> and re-scan.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ─────────── API ─────────── -->
+  <main x-show="tab==='api'" class="page" x-cloak>
+    <section class="page-head">
+      <h1>API</h1>
+      <p class="muted">
+        Drive ImageStudio from your main Mac (or any LAN device) over plain HTTP.
+        Permissive CORS is enabled so browser apps work too. For interactive
+        documentation with every endpoint and schema:
+        <a class="link-accent" :href="apiBase + '/docs'" target="_blank">Swagger UI</a>
+        ·
+        <a class="link-accent" :href="apiBase + '/redoc'" target="_blank">ReDoc</a>
+      </p>
+    </section>
+
+    <section class="card api-card">
+      <h2>Server URL</h2>
+      <p class="muted">
+        Use this as the base for all <code>/api/*</code> calls. For remote access from
+        your main Mac, set <code>PINOKIO_SHARE_LOCAL=true</code> in the <code>ENVIRONMENT</code>
+        file and restart — Pinokio will print a LAN URL alongside the local one.
+      </p>
+      <div class="code-block">
+        <pre><code x-text="apiBase"></code></pre>
+        <button class="ghost small copy-btn" @click="copyText(apiBase)">Copy</button>
+      </div>
+    </section>
+
+    <section class="card api-card">
+      <h2>Curl — generate an image end-to-end</h2>
+      <div class="code-block">
+        <pre><code x-text="curlExample"></code></pre>
+        <button class="ghost small copy-btn" @click="copyText(curlExample)">Copy</button>
+      </div>
+      <p class="muted hint">
+        The flow is <code>POST /api/generate/txt2img → poll /jobs/&lt;id&gt; → GET /jobs/&lt;id&gt;/image</code>.
+        Generation runs async so the POST returns instantly with a job id.
+      </p>
+    </section>
+
+    <section class="card api-card">
+      <h2>JavaScript (fetch)</h2>
+      <div class="code-block">
+        <pre><code x-text="jsExample"></code></pre>
+        <button class="ghost small copy-btn" @click="copyText(jsExample)">Copy</button>
+      </div>
+    </section>
+
+    <section class="card api-card">
+      <h2>Python (requests)</h2>
+      <div class="code-block">
+        <pre><code x-text="pythonExample"></code></pre>
+        <button class="ghost small copy-btn" @click="copyText(pythonExample)">Copy</button>
+      </div>
+    </section>
+
+    <section class="card api-card">
+      <h2>Re-download an old image</h2>
+      <p class="muted">
+        Every generation has a stable, persistent <code>job.id</code>. Save the id
+        from the POST response and you can re-fetch the image any time — even
+        after server restarts. History is kept for the most recent 200 generations.
+      </p>
+      <div class="code-block">
+        <pre><code x-text="reDownloadExample"></code></pre>
+        <button class="ghost small copy-btn" @click="copyText(reDownloadExample)">Copy</button>
+      </div>
+      <p class="muted hint">
+        💡 The PNG filename on disk is also <code>&lt;job_id&gt;.png</code> in
+        <code>app/output/</code>, so you can browse them with Finder too.
+      </p>
+    </section>
+
+    <section class="card api-card">
+      <h2>List all past jobs</h2>
+      <p class="muted">
+        Useful when you've lost a job id — you can browse recent history and grep
+        by prompt or seed.
+      </p>
+      <div class="code-block">
+        <pre><code x-text="listJobsExample"></code></pre>
+        <button class="ghost small copy-btn" @click="copyText(listJobsExample)">Copy</button>
+      </div>
+    </section>
+
+    <section class="card api-card">
+      <h2>Endpoint summary</h2>
+      <table class="endpoint-table">
+        <thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td>GET</td><td><code>/api/health</code></td><td>Liveness + HF_HOME info</td></tr>
+          <tr><td>GET</td><td><code>/api/catalog</code></td><td>All models + families + live cache state</td></tr>
+          <tr><td>GET</td><td><code>/api/cache/{repo}</code></td><td>Cache state for one repo</td></tr>
+          <tr><td>GET</td><td><code>/api/downloads</code></td><td>List download jobs</td></tr>
+          <tr><td>POST</td><td><code>/api/downloads</code></td><td>Start a download — body <code>{repo, token?}</code></td></tr>
+          <tr><td>DELETE</td><td><code>/api/downloads/{id}</code></td><td>Cancel a download</td></tr>
+          <tr><td>GET</td><td><code>/api/downloads/stream</code></td><td>SSE stream of download progress</td></tr>
+          <tr><td>GET</td><td><code>/api/imports/scan</code></td><td>List importable HF-cache folders</td></tr>
+          <tr><td>POST</td><td><code>/api/imports</code></td><td>Symlink a folder into HF_HOME</td></tr>
+          <tr><td>GET</td><td><code>/api/loras</code></td><td>List local LoRAs in <code>app/lora/</code></td></tr>
+          <tr><td>GET</td><td><code>/api/generate/availability</code></td><td>Is mflux installed? + aspect presets</td></tr>
+          <tr><td>POST</td><td><code>/api/generate/txt2img</code></td><td>Start text-to-image generation</td></tr>
+          <tr><td>GET</td><td><code>/api/generate/jobs</code></td><td>List generation jobs</td></tr>
+          <tr><td>GET</td><td><code>/api/generate/jobs/{id}</code></td><td>Poll one job</td></tr>
+          <tr><td>GET</td><td><code>/api/generate/jobs/{id}/image</code></td><td>Download the rendered PNG</td></tr>
+          <tr><td>DELETE</td><td><code>/api/generate/jobs/{id}</code></td><td>Cancel a job</td></tr>
+          <tr><td>GET</td><td><code>/api/generate/stream</code></td><td>SSE stream of generation jobs</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <!-- ─────────── SETTINGS ─────────── -->
+  <main x-show="tab==='settings'" class="page" x-cloak>
+    <section class="page-head">
+      <h1>Settings</h1>
+      <p class="muted">
+        Persistent app-wide configuration. Stored in <code>app/backend/settings.json</code>
+        (gitignored, never leaves your machine).
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Hugging Face token</h2>
+      <p class="muted">
+        Status:
+        <strong x-show="settings.hf_token_set" class="ok-text">✓ Saved</strong>
+        <strong x-show="!settings.hf_token_set" class="warn-text">Not set</strong>
+        <span x-show="settings.hf_token_set" class="muted">
+          (<code x-text="settings.hf_token_masked"></code>)
+        </span>
+      </p>
+
+      <details class="control-help" open>
+        <summary>Why bother setting one?</summary>
+        <p>
+          A Hugging Face token is your personal pass to the HF model hub. Without one,
+          you're an anonymous downloader — which means:
+        </p>
+        <ul class="primer-body" style="padding-left:18px">
+          <li><strong>Lower rate limits.</strong> HF throttles anonymous traffic far more aggressively. Big downloads stall or hit caps.</li>
+          <li><strong>Slower CDN tier.</strong> Authenticated requests get priority routing to closer edge servers.</li>
+          <li><strong>No access to gated models.</strong> FLUX.2 dev, FLUX.2 klein base, FLUX.1 dev — all gated. Without a token you literally can't download them, even after accepting their license on the HF site.</li>
+          <li><strong>No access to your own private models.</strong> If you've trained or uploaded private LoRAs/checkpoints, the token gives you access here too.</li>
+        </ul>
+        <p class="muted">
+          The token is stored locally in <code>app/backend/settings.json</code>.
+          It never leaves your Mac except as an <code>Authorization</code> header sent
+          directly to <code>huggingface.co</code> during downloads. We never log it.
+        </p>
+      </details>
+
+      <details class="control-help" open>
+        <summary>How to get one (30 seconds)</summary>
+        <ol class="primer-body" style="padding-left:18px">
+          <li>Go to <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener" class="link-accent">huggingface.co/settings/tokens</a> (sign up free if you don't have an account)</li>
+          <li>Click <strong>Create new token</strong></li>
+          <li>Token type: <strong>Read</strong> is enough. Don't pick "Write" or "Fine-grained" unless you know you need them.</li>
+          <li>Name it something memorable (e.g. <code>imagestudio-mac</code>)</li>
+          <li>Copy the token (starts with <code>hf_…</code>) and paste it below</li>
+        </ol>
+        <p class="muted">
+          For gated repos like <code>black-forest-labs/FLUX.2-dev</code>, you also need
+          to visit each repo page once and click "Agree and access" to accept their license.
+          That's a one-time step per repo.
+        </p>
+      </details>
+
+      <div class="form-row" style="margin-top: 14px;">
+        <input :type="settings.showToken ? 'text' : 'password'"
+               x-model="settings.tokenInput"
+               placeholder="hf_…"
+               autocomplete="off"
+               spellcheck="false"
+               style="flex: 1 1 320px; font-family: 'JetBrains Mono', monospace; font-size: 13px;" />
+        <button class="ghost small" @click="settings.showToken = !settings.showToken"
+                x-text="settings.showToken ? '🙈 Hide' : '👁 Show'"></button>
+      </div>
+
+      <div class="form-row" style="margin-top: 0;">
+        <button class="primary" @click="saveSettings()" :disabled="settings.busy">
+          <span x-show="!settings.busy">Save</span>
+          <span x-show="settings.busy">Saving…</span>
+        </button>
+        <button class="ghost" @click="testToken()" :disabled="settings.busy || (!settings.tokenInput.trim() && !settings.hf_token_set)">
+          Test connection
+        </button>
+        <button class="ghost danger" @click="clearToken()" :disabled="settings.busy || !settings.hf_token_set"
+                title="Remove the saved token. Downloads will fall back to anonymous mode.">
+          Clear saved token
+        </button>
+      </div>
+
+      <p class="status-text" x-show="settings.message" :class="settings.messageKind"
+         x-text="settings.message" x-cloak></p>
+    </section>
+
+    <section class="card">
+      <h2>Network access — how to reach this app from another device</h2>
+      <p class="muted">
+        Where the API is currently reachable, auto-detected. Use these from your main
+        Mac, iPhone, scripts, or anywhere else on your LAN / Tailnet.
+      </p>
+
+      <div class="port-banner">
+        <div class="port-banner-label">Bound port</div>
+        <div class="port-banner-value">
+          <code x-text="conn.bind_port"></code>
+          <button class="link small" @click="copyText(String(conn.bind_port))">copy</button>
+        </div>
+        <p class="muted hint">
+          Hardcoded in <code>start.js</code> so it survives every restart. If you
+          ever want to change it, edit the <code>--port</code> arg there and Stop → Start.
+        </p>
+      </div>
+
+      <details class="control-help" open>
+        <summary>How does direct API access work here?</summary>
+        <p>
+          Our server is configured to bind on <strong>0.0.0.0</strong> at a fixed port
+          <strong x-text="conn.bind_port"></strong>, which means it listens on every
+          network interface (loopback + LAN + Tailscale). Any device that can reach
+          this Mac on that port can call the API directly — no Pinokio proxy needed,
+          no port-rotation surprises.
+        </p>
+        <p>
+          That's a deliberate trade-off from the "127.0.0.1-only secure default" you
+          might see in other apps:
+        </p>
+        <ul class="primer-body" style="padding-left: 18px;">
+          <li>
+            <strong>Pro:</strong> stable URL, lower latency, full
+            <code>/docs</code> Swagger access from any device, easy scripting.
+          </li>
+          <li>
+            <strong>Con:</strong> the API has no built-in authentication right now,
+            so <em>anything</em> on the network you bind to can call it. On a
+            personal Tailscale tailnet (only your own devices) that's fine — but
+            don't expose port <strong x-text="conn.bind_port"></strong> to the
+            public internet without adding an auth layer first.
+          </li>
+        </ul>
+        <p class="muted">
+          To revert to the "secure default" (loopback only), edit
+          <code>start.js</code> and change <code>--host 0.0.0.0</code> back to
+          <code>--host 127.0.0.1</code>. Then access becomes Pinokio-UI-only again.
+        </p>
+      </details>
+
+      <h3 class="net-h3">Reachable URLs — direct API access</h3>
+      <p class="muted">
+        Hit these from curl, Python, your main Mac's browser, anywhere on your
+        LAN/tailnet. <code>/docs</code> on any of them opens the Swagger UI.
+      </p>
+      <div class="net-urls">
+        <template x-for="addr in conn.addresses.filter(a => a.kind !== 'loopback')" :key="'direct-' + addr.ip">
+          <div class="net-row">
+            <span class="chip" :class="addr.kind === 'tailscale' ? 'ok' : (addr.kind === 'lan' ? '' : 'neutral')"
+                  x-text="addr.kind"></span>
+            <code x-text="'http://' + addr.ip + ':' + conn.bind_port"></code>
+            <button class="link small" @click="copyText('http://' + addr.ip + ':' + conn.bind_port)">copy</button>
+            <small class="muted">direct API</small>
+          </div>
+        </template>
+        <p x-show="conn.addresses.filter(a => a.kind !== 'loopback').length === 0" class="muted">
+          No external network interfaces detected — this Mac is offline or has only loopback.
+        </p>
+      </div>
+
+      <h3 class="net-h3">Reachable URLs — via Pinokio UI</h3>
+      <p class="muted">
+        These open the Pinokio launcher itself; click into ImageStudio from
+        there to use the UI on a remote device. Use these for "I want the
+        interactive web UI", not for scripted API calls.
+      </p>
+      <div class="net-urls">
+        <template x-for="addr in conn.addresses.filter(a => a.kind !== 'loopback')" :key="'pinokio-' + addr.ip">
+          <div class="net-row">
+            <span class="chip" :class="addr.kind === 'tailscale' ? 'ok' : (addr.kind === 'lan' ? '' : 'neutral')"
+                  x-text="addr.kind"></span>
+            <code x-text="'http://' + addr.ip + ':' + conn.pinokio_ui_port"></code>
+            <button class="link small" @click="copyText('http://' + addr.ip + ':' + conn.pinokio_ui_port)">copy</button>
+            <small class="muted">Pinokio UI</small>
+          </div>
+        </template>
+      </div>
+
+      <h3 class="net-h3">Share proxy status</h3>
+      <p class="muted" x-show="!conn.share_local_enabled">
+        ⚠ <code>PINOKIO_SHARE_LOCAL=false</code>. Direct API access from other devices
+        is currently disabled. To enable: open <code>ENVIRONMENT</code> in this
+        launcher folder, change <code>PINOKIO_SHARE_LOCAL=false</code> to
+        <code>true</code>, then <strong>Stop → Start</strong> ImageStudio in Pinokio.
+      </p>
+      <p class="ok-text" x-show="conn.share_local_enabled">
+        ✓ <code>PINOKIO_SHARE_LOCAL=true</code>. Pinokio is exposing this app on a
+        network port — look in the <strong>Terminal</strong> tab for the printed share URL.
+      </p>
+      <p class="muted" x-show="conn.share_local_enabled && conn.share_local_port_fixed">
+        Fixed share port: <code x-text="conn.share_local_port_fixed"></code> (set via <code>PINOKIO_SHARE_LOCAL_PORT</code>).
+      </p>
+      <p class="muted" x-show="conn.share_local_enabled && !conn.share_local_port_fixed">
+        💡 The share port is currently random per session. To pin it for stable
+        scripting, set <code>PINOKIO_SHARE_LOCAL_PORT=&lt;a-number&gt;</code> in
+        <code>ENVIRONMENT</code>.
+      </p>
+      <p class="muted" x-show="conn.share_passcode_set">
+        🔒 Share proxy is passcode-protected (<code>PINOKIO_SHARE_PASSCODE</code> is set).
+      </p>
+      <p class="muted" x-show="conn.share_local_enabled && !conn.share_passcode_set">
+        ⚠ No <code>PINOKIO_SHARE_PASSCODE</code> set — anyone on your LAN/Tailnet
+        can call the API with no auth. Fine on a personal tailnet, risky on shared networks.
+      </p>
+
+      <details class="control-help">
+        <summary>Are these addresses stable?</summary>
+        <ul class="primer-body" style="padding-left: 18px;">
+          <li>
+            <strong>App port (<span x-text="conn.bind_port"></span>):</strong>
+            <span class="ok-text">Yes — pinned in start.js.</span>
+            We hardcoded port <strong x-text="conn.bind_port"></strong> so it
+            survives restarts and scripts can reliably target it. If it ever clashes
+            with another app, change the number in <code>start.js</code>.
+          </li>
+          <li>
+            <strong>Pinokio UI port (42000):</strong>
+            <span class="ok-text">Yes — stable.</span>
+            Pinokio's hardcoded default. Use this as your remote-access entry point.
+          </li>
+          <li>
+            <strong>LAN IP (192.168.x.y / 10.x.x.x):</strong>
+            <span class="muted">Usually yes.</span>
+            Assigned by your router via DHCP, typically stable for days or weeks.
+            For permanence, set a DHCP reservation on your router.
+          </li>
+          <li>
+            <strong>Tailscale IP (100.x.x.x):</strong>
+            <span class="ok-text">Yes — permanent.</span>
+            Assigned by Tailscale per node, stable for the life of that machine in
+            your tailnet. Best choice for stable remote access.
+          </li>
+          <li>
+            <strong>Share proxy port:</strong>
+            <span class="muted">You control it.</span>
+            Set <code>PINOKIO_SHARE_LOCAL_PORT</code> in <code>ENVIRONMENT</code> for a
+            fixed value, leave it blank to let Pinokio pick random per session.
+          </li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>Where settings live</h2>
+      <p class="muted">
+        <code>app/backend/settings.json</code> — JSON file, this server reads it on every
+        request. Changes apply immediately, no server restart needed.
+      </p>
+    </section>
+  </main>
+
+  <!-- ─────────── TOASTS ─────────── -->
+  <div class="toast-stack" aria-live="polite">
+    <template x-for="t in toasts" :key="t.id">
+      <div class="toast" :class="t.kind" @click="dismissToast(t.id)">
+        <span class="toast-icon" x-text="t.icon"></span>
+        <div class="toast-body">
+          <strong x-text="t.title"></strong>
+          <p class="muted" x-show="t.body" x-text="t.body"></p>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- ─────────── DOWNLOAD CONFIRM MODAL ─────────── -->
+  <div class="modal-backdrop" x-show="pendingDownload" x-cloak @click.self="pendingDownload=null">
+    <div class="modal" x-show="pendingDownload">
+      <template x-if="pendingDownload">
+        <div>
+          <h2>Download this model?</h2>
+          <p>
+            <strong x-text="pendingDownload.label"></strong>
+            <br/>
+            <code x-text="pendingDownload.repo"></code>
+          </p>
+          <ul class="facts">
+            <li><span x-text="formatGb(pendingDownload.size_gb) + ' download'"></span></li>
+            <li><span x-text="'Needs ≥' + pendingDownload.min_unified_memory_gb + ' GB unified memory at runtime'"></span></li>
+            <li x-show="pendingDownload.gated">
+              Gated repo — you'll need a Hugging Face token with access.
+            </li>
+          </ul>
+          <p class="muted" x-text="pendingDownload.recommended_hardware"></p>
+
+          <div class="form-row" x-show="pendingDownload.gated">
+            <input type="password" x-model="downloadToken"
+                   :placeholder="settings.hf_token_set ? 'Leave blank to use saved Settings token' : 'HF token (hf_…)'" />
+          </div>
+          <p class="muted hint" x-show="pendingDownload.gated && settings.hf_token_set">
+            💡 Using your saved <a class="link-accent" @click="pendingDownload=null; tab='settings'">Settings token</a>
+            unless you paste an override above.
+          </p>
+          <p class="muted hint" x-show="pendingDownload.gated && !settings.hf_token_set">
+            💡 No default token saved. Set one in
+            <a class="link-accent" @click="pendingDownload=null; tab='settings'">Settings</a>
+            and you won't have to paste it for every gated download.
+          </p>
+
+          <div class="modal-actions">
+            <button class="ghost" @click="pendingDownload=null">Cancel</button>
+            <button class="primary" @click="startDownload()">Start download</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ─── App footer (Tier 1 versioning) ─── -->
+  <!-- Reads health.app_version which is populated by refreshHealth() on init. -->
+  <footer class="app-footer">
+    <span class="app-footer-title">Image Studio KH</span>
+    <span class="app-footer-sep">·</span>
+    <span class="app-footer-version">
+      v<span x-text="health.app_version || '…'"></span>
+    </span>
+  </footer>
+
+</body>
+</html>

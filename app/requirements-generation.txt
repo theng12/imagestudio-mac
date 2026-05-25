@@ -1,0 +1,9 @@
+# Heavy generation dependencies — installed by install_generation.js, NOT by install.js.
+# Splitting these out keeps the Phase 1 install fast and lets users browse the
+# catalog / manage downloads without committing to the multi-GB MLX toolchain.
+
+mflux>=0.10
+# mflux pulls in mlx, mlx-lm, transformers, safetensors, sentencepiece, etc.
+# We list a few extras directly so version conflicts are explicit:
+pillow>=10.0
+numpy>=1.26
