@@ -1,10 +1,23 @@
 // Heavy install: adds mflux + MLX + supporting deps to the existing conda_env.
 // Required for any /api/generate/* endpoint to work. Safe to run more than once.
+//
+// Restart flow: if start.js is running when this script fires, we stop
+// it first so its Python process exits, then run the install, then start
+// it back up. Without the stop+start the long-lived uvicorn worker keeps
+// the old sys.modules cache and never sees the freshly installed mflux —
+// the UI then surfaces "ModuleNotFoundError: No module named 'mflux'"
+// even though pip succeeded. Auto-restarting removes the manual
+// "Stop → Start" step users used to have to remember.
 module.exports = {
   requires: {
     bundle: "ai"
   },
   run: [
+    {
+      when: "{{running('start.js')}}",
+      method: "script.stop",
+      params: { uri: "start.js" }
+    },
     {
       method: "shell.run",
       params: {
@@ -18,9 +31,13 @@ module.exports = {
       }
     },
     {
+      method: "script.start",
+      params: { uri: "start.js" }
+    },
+    {
       method: "notify",
       params: {
-        html: "Generation engine installed. Restart the server (Stop → Start) to enable the Generate tab."
+        html: "Generation engine installed. Server restarted — Generate is ready."
       }
     }
   ]
