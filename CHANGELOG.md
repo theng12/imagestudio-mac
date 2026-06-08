@@ -10,6 +10,72 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.4.2] — 2026-06-06
+
+### Added — auto-restart on Update + "Repair · take over port" button
+- **Update restarts the service:** `update.js` now ends with a `restart_service.sh` step gated on `{{exists('service/.installed')}}`, so an installed service picks up new backend code automatically after Update (no-op otherwise).
+- **"Repair · take over port"** menu item (service mode) re-runs the installer to fix any wedged/conflicting state in one click.
+
+### Fixed — take-over no longer risks killing connected clients
+The v1.4.1 port take-over used `lsof -ti tcp:PORT`, which also matches connected clients (browser tab / Pinokio webview / SSE). Now filtered with `-sTCP:LISTEN` so only the listening server is targeted. Verified live.
+
+### Notes
+- PATCH — service scripts + update.js. Mirrored across all 3 KH apps (Voice 1.6.2, Music 1.2.2). `Update`, then re-run Install Service once.
+
+---
+
+## [1.4.1] — 2026-06-06
+
+### Fixed — "Check Service Status" clarity + double-run conflict detection
+
+- The watchdog is *periodic* (fires ~1s every 60s), so "not running" between checks is normal — the status now says so instead of a scary raw dump. Server line is now `✓ loaded · running (pid N)`.
+- **Port-conflict detection:** if you run both Pinokio's **Start** and the service, they fight for port 47868 and the service crash-loops (`[Errno 48] address already in use`). The status script now detects this and explains it.
+- **Install now takes over the port:** `Install as Startup Service` stops whatever's already on the port (your Pinokio "Start") before starting the service, so "Start, then Install Service" Just Works — no crash loop, no manual `pkill`. Uninstalling doesn't auto-restart the Pinokio instance.
+
+### Notes
+- PATCH — service scripts only. Mirrored across all 3 KH apps (Voice 1.6.1, Music 1.2.1). `Update`, then re-run Install Service once.
+
+---
+
+## [1.4.0] — 2026-06-06
+
+### Added — one-click "Install as Startup Service" (always-on server + self-healing)
+
+For running this on a headless/server Mac (e.g. a fleet reached over Tailscale), the app can now be a real background service instead of opening Pinokio and clicking Start each time.
+
+New sidebar button **❤️ Install as Startup Service** installs a macOS **launchd LaunchAgent** that:
+
+- runs the server (`serve.sh` → uvicorn on **47868**) **at login**, so it returns automatically after a reboot;
+- **restarts on crash** via launchd `KeepAlive`;
+- ships a **health watchdog** (`watchdog.sh`, every 60s) that hits `/api/health` and relaunches the server if it hangs.
+
+No sudo needed. The button toggles to **Startup Service: ON — click to remove**. Service logs go to `logs/service/`.
+
+New files: `serve.sh`, `watchdog.sh`, `install_service.sh`, `uninstall_service.sh`, `service.js`, `unservice.js` (self-locating; the per-machine `service/.installed` marker is gitignored).
+
+### Service mode — manage it from the sidebar
+Once installed, launchd owns the server (Pinokio doesn't see it as "running"), so the sidebar switches to a **service-mode menu** — no conflicting "Start" button:
+
+- **Open UI / Open in Browser** — straight to the running server on port 47868 (no Pinokio Start needed).
+- **Check Service Status** (`status_service.sh`) — launchd state + live `/api/health` + recent log, so you know it's actually up.
+- **Restart Service** (`restart_service.sh`) — manual `launchctl kickstart -k`.
+- **Service Logs** + **Uninstall Startup Service** (brings the normal Start button back).
+
+Extra files: `status_service.sh`, `restart_service.sh`, `service_status.js`, `service_restart.js`.
+
+### Docs — power-cut recovery, explained
+The install button prints, and the README documents, the three one-time **admin** settings for full hands-off recovery after a power outage (you do these once per machine):
+1. `sudo pmset -a autorestart 1` — power on automatically when electricity returns.
+2. **Auto-login** — required so the Apple GPU (Metal/MLX) is available; a pre-login daemon can't use it.
+3. **FileVault off** — otherwise reboot halts at the encrypted-disk password screen.
+
+### Notes
+- MINOR bump — new feature, no new deps. `Update` from the sidebar, then click **Install as Startup Service** on each Mac.
+- Use the **service OR** Pinokio's **Start** — not both (they share port 47868).
+- Mirrored across all 3 KH apps (Voice 1.6.0, Music 1.2.0).
+
+---
+
 ## [1.3.2] — 2026-05-24
 
 ### Fixed — Cancelled queued jobs no longer pop back to "queued" in the UI

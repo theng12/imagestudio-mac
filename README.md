@@ -134,3 +134,39 @@ curl -N http://<server>:<port>/api/downloads/stream
 ## Patches / known limitations
 
 Nothing patched in `app/` yet — this is greenfield code, not a fork.
+
+## Run as an always-on server (auto-start + self-healing)
+
+By default you start the app by opening Pinokio and clicking **Start**. If instead you want this Mac to behave like a **server** — the API always up, started automatically on boot, and self-healing — use the one-click service.
+
+### Turn it on
+In the Pinokio sidebar click **❤️ Install as Startup Service**. It:
+
+- Installs a macOS **launchd LaunchAgent** that runs the server (`serve.sh`) on **port 47868**.
+- **Starts automatically** every time you log in (so it comes back after a reboot).
+- **Restarts itself if it crashes** (launchd `KeepAlive`).
+- Adds a **health watchdog** that pings `/api/health` every 60s and relaunches the server if it ever hangs.
+
+No admin/sudo needed for this step. To remove it later, click **Startup Service: ON — click to remove**. Logs live in `logs/service/`. Reach the API over Tailscale/LAN at `http://<this-mac>:47868`.
+
+> Use the **service OR** Pinokio's **Start** button — not both (they share port 47868).
+
+### One-time Mac settings for full power-cut recovery (why they matter)
+The service handles *software* restarts. To survive an actual **power outage** with zero human steps, each Mac also needs three system settings (admin-level, done once — the button does **not** change these):
+
+1. **Power back on automatically when electricity returns**
+   ```bash
+   sudo pmset -a autorestart 1
+   ```
+   *Why:* otherwise the Mac stays off after the power drops. This boots it the moment power returns.
+
+2. **Enable Automatic login** — System Settings ▸ Users & Groups ▸ *Automatically log in as …*
+   *Why:* the Apple GPU (Metal / MLX) is **only available inside a logged-in session**. A service that starts before login can't use the GPU, so generation would fail or crawl on CPU.
+
+3. **Turn FileVault OFF** — System Settings ▸ Privacy & Security ▸ FileVault
+   *Why:* with FileVault on, a reboot stops at the encrypted-disk password screen and never reaches auto-login — so the server never comes back by itself.
+
+With all three set **plus** the startup service: power returns → Mac powers on → auto-logs in → server + watchdog start with GPU access → crashes/hangs auto-recover. Fully hands-off.
+
+### Rolling it out to many Macs
+The service files ship inside this launcher, so on each Mac you just click **Install as Startup Service** once. Do the three system settings once per machine. Updates flow through the normal **Update** button.
