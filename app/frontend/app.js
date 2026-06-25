@@ -9,6 +9,14 @@ function studio() {
     // Used by the Models tab to render per-card fit chips that compare each
     // model's memory floor against the user's actual RAM.
     system: { chip: null, chip_tier: null, unified_memory_gb: null },
+    // ──────── RAM slider (Models tab hardware planner) ────────
+    // Effective unified-memory budget used to score every model's fit chip
+    // LIVE on the client. Defaults to detected RAM; the user can drag/type
+    // it to preview a different machine (e.g. plan a 512 GB Mac before
+    // buying it). Seeded in _initRamPlanner() after /api/system.
+    ramGb: null,
+    ramIsDetected: true,          // false once the user overrides the slider
+    ramTiers: [8, 16, 24, 32, 48, 64, 128, 256, 512],
     families: {},
     models: [],
     jobs: [],
@@ -91,6 +99,9 @@ function studio() {
       // New in v1.1.2 — two boolean filter chips.
       mlxOnly: false,           // when true, hide non-MLX entries
       fitsMyMac: false,         // when true, hide entries where fit.state === 'risky'
+      // segmented RAM-fit filter, scored against the RAM slider:
+      // "all" | "ok" (green) | "tight" (yellow) | "over" (red)
+      fitLevel: "all",
       sortBy: "default",
       collapsedFamilies: new Set(),
       // Per-repo "show full details" toggle. Cards default to compact —
@@ -108,6 +119,18 @@ function studio() {
       busy: false,
       message: "",
       messageKind: "info",   // "success" | "error" | "info"
+    },
+
+    // ──────── cloud provider API keys (Settings tab) ────────
+    // Backing state for the keyed cloud providers (Cloudflare, Together).
+    // Pollinations needs no key, so it isn't represented here.
+    cloudKeys: {
+      cloudflare_account_id_set: false, cloudflare_account_id_masked: "",
+      cloudflare_api_token_set: false,  cloudflare_api_token_masked: "",
+      together_api_key_set: false,      together_api_key_masked: "",
+      cfAccount: "", cfToken: "", together: "",   // input fields (cleared after save)
+      showCfToken: false, showTogether: false,
+      busy: false, message: "", messageKind: "info",
     },
 
     // ──────── network/connectivity (where the API can be reached) ────────
@@ -140,6 +163,8 @@ function studio() {
         async init() {
       await this.refreshHealth();
       await this.refreshSystem();
+      // Seed the RAM-slider budget from detected RAM (or a saved override).
+      this._initRamPlanner();
       this._syncTopbarHeight();
       window.addEventListener('resize', () => this._syncTopbarHeight());
       // Also re-measure on next animation frame in case fonts/layout settle late.
@@ -212,6 +237,88 @@ function studio() {
       return out;
     },
 
+    // ─── RAM slider + client-side hardware fit ────────────────────────
+    /** Effective RAM budget (GB) for fit scoring: slider value, else
+     *  detected RAM, else a neutral 16 GB. */
+    get effectiveRam() {
+      return this.ramGb || this.system.unified_memory_gb || 16;
+    },
+    /** Client-side fit verdict for a model's memory floor vs effectiveRam.
+     *  Mirrors backend system_info.fit_for() (1.5× comfortable / 1.0× tight /
+     *  below = over budget) so the RAM slider re-scores every card instantly. */
+    fitFor(minGb) {
+      const actual = this.effectiveRam;
+      const floor = Math.max(Number(minGb) || 0, 1);
+      const headroom = actual / floor;
+      let state;
+      if (headroom >= 1.5)      state = "ok";
+      else if (headroom >= 1.0) state = "tight";
+      else                      state = "risky";
+      const hint = headroom >= 1.5
+        ? `${actual} GB is ≥1.5× this model's ${minGb} GB floor — comfortable headroom.`
+        : headroom >= 1.0
+          ? `${actual} GB just clears the ${minGb} GB floor — close other apps before loading.`
+          : `${actual} GB is below the ${minGb} GB floor — it would swap heavily or fail to load.`;
+      return { state, actual_gb: actual, required_gb: Number(minGb) || 0, hint };
+    },
+    setRam(gb) {
+      const v = Math.max(1, Math.min(1024, Math.round(Number(gb) || 0)));
+      this.ramGb = v;
+      this.ramIsDetected = (v === this.system.unified_memory_gb);
+      this._persistFilterPref("ramGb", v);
+    },
+    resetRamToDetected() {
+      const d = this.system.unified_memory_gb;
+      if (d) this.setRam(d);
+    },
+    /** Seed the RAM slider from a saved override or the detected RAM. */
+    _initRamPlanner() {
+      try {
+        const saved = localStorage.getItem("imagestudio.modelFilters.ramGb");
+        if (saved !== null && !isNaN(+saved)) {
+          this.ramGb = +saved;
+          this.ramIsDetected = (+saved === this.system.unified_memory_gb);
+          return;
+        }
+      } catch {}
+      this.ramGb = this.system.unified_memory_gb || 16;
+      this.ramIsDetected = !!this.system.unified_memory_gb;
+    },
+    /** "✨ Best for your RAM" — recommendations that fit the current budget
+     *  (fit ≠ risky). Image models barely differ by capability (almost all do
+     *  txt2img + img2img + edit), so the lanes differentiate by what users
+     *  actually trade off: top quality (heaviest), fastest (lightest), and
+     *  best dedicated editing model. Re-computes live as the slider moves. */
+    get bestPicks() {
+      const fits  = (m) => this.fitFor(m.min_unified_memory_gb).state !== "risky";
+      const heavy = (m) => (Number(m.min_unified_memory_gb) || 0) * 1000
+                         + (Number(m.size_gb) || 0) * 10
+                         + (/recommended/i.test(m.label || "") ? 5 : 0);
+      const pickHeavy = (predicate) => {
+        const c = (this.models || []).filter(m => fits(m) && predicate(m));
+        return c.length ? c.slice().sort((a, b) => heavy(b) - heavy(a))[0] : null;
+      };
+      const pickLight = (predicate) => {
+        const c = (this.models || []).filter(m => fits(m) && predicate(m));
+        // Lightest on-disk model = fastest to load / iterate with.
+        return c.length ? c.slice().sort((a, b) => (Number(a.size_gb) || 0) - (Number(b.size_gb) || 0))[0] : null;
+      };
+      const hasCap = (m, cap) => (m.capabilities || []).includes(cap);
+      const buckets = [
+        { id: "quality", label: "Best quality",     icon: "🏆", model: pickHeavy(() => true) },
+        // Lightest LOCAL generator (exclude 0-size cloud entries so this lane
+        // recommends a real download you can iterate on, not a hosted API).
+        { id: "fast",    label: "Fastest / lightest", icon: "⚡", model: pickLight(m => hasCap(m, "txt2img") && (Number(m.size_gb) || 0) > 0) },
+        { id: "edit",    label: "Best for editing",  icon: "🎨", model: pickHeavy(m => hasCap(m, "edit") && (Number(m.size_gb) || 0) > 0) },
+      ];
+      const seen = new Set();
+      return buckets.filter(b => {
+        if (!b.model || seen.has(b.model.repo)) return false;
+        seen.add(b.model.repo);
+        return true;
+      });
+    },
+
     // ─── Library filters (Models tab) ─────────────────────────────────
     get filteredModelsByFamily() {
       const f = this.modelFilters;
@@ -236,7 +343,13 @@ function studio() {
         // We exclude only "risky" (below floor); "tight" still shows since the
         // user might consciously accept that trade-off. "unknown" also shows
         // since we don't have evidence either way.
-        if (f.fitsMyMac && m.fit && m.fit.state === "risky") return false;
+        if (f.fitLevel && f.fitLevel !== "all") {
+          const st = this.fitFor(m.min_unified_memory_gb).state;
+          if (f.fitLevel === "ok"    && st !== "ok")    return false;
+          if (f.fitLevel === "tight" && st !== "tight") return false;
+          if (f.fitLevel === "over"  && st !== "risky") return false;
+        }
+        if (f.fitsMyMac && this.fitFor(m.min_unified_memory_gb).state === "risky") return false;
         if (q) {
           const hay = ((m.label || "") + " " + (m.repo || "") + " " + (m.best_for || "")).toLowerCase();
           if (!hay.includes(q)) return false;
@@ -280,7 +393,7 @@ function studio() {
     get hasActiveFilters() {
       const f = this.modelFilters;
       return !!(f.search.trim() || f.families.size || f.statuses.size || f.capabilities.size
-                || f.mlxOnly || f.fitsMyMac);
+                || f.mlxOnly || f.fitsMyMac || (f.fitLevel && f.fitLevel !== "all"));
     },
     /** Human-readable breakdown of every active filter — used by the empty
      *  state so users can SEE what cut their results and tap any single
@@ -308,6 +421,10 @@ function studio() {
       }
       if (f.fitsMyMac) {
         out.push({ label: "🖥 Fits my Mac", removeFn: () => this.toggleFitsMyMacFilter() });
+      }
+      if (f.fitLevel && f.fitLevel !== "all") {
+        const lbl = { ok: "✓ Fits", tight: "⚠ Tight", over: "✗ Over budget" }[f.fitLevel] || f.fitLevel;
+        out.push({ label: `RAM fit: ${lbl}`, removeFn: () => this.modelFilters.fitLevel = "all" });
       }
       return out;
     },
@@ -406,7 +523,9 @@ function studio() {
       this.modelFilters.capabilities = new Set();
       this.modelFilters.mlxOnly = false;
       this.modelFilters.fitsMyMac = false;
+      this.modelFilters.fitLevel = "all";
       this.modelFilters.sortBy = "default";
+      // ramGb intentionally NOT reset — it's a hardware setting, not a filter.
       // NOTE: intentionally NOT resetting expandedRepos — that's a separate
       // user concern (collapseAllVisible has its own dedicated button).
     },
@@ -842,9 +961,81 @@ function studio() {
         const data = await r.json();
         this.settings.hf_token_set = !!data.hf_token_set;
         this.settings.hf_token_masked = data.hf_token_masked || "";
+        // Cloud provider key statuses (masked; never the raw values).
+        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key"]) {
+          this.cloudKeys[k + "_set"] = !!data[k + "_set"];
+          this.cloudKeys[k + "_masked"] = data[k + "_masked"] || "";
+        }
       } catch { /* keep last */ }
       // Connectivity panel is on the same tab — refresh it at the same time.
       await this.refreshConnectivity();
+    },
+
+    async saveCloudKeys() {
+      const body = {};
+      const cf = (this.cloudKeys.cfAccount || "").trim();
+      const cft = (this.cloudKeys.cfToken || "").trim();
+      const tg = (this.cloudKeys.together || "").trim();
+      if (cf)  body.cloudflare_account_id = cf;
+      if (cft) body.cloudflare_api_token = cft;
+      if (tg)  body.together_api_key = tg;
+      if (Object.keys(body).length === 0) {
+        this.cloudKeys.message = "Enter at least one key to save.";
+        this.cloudKeys.messageKind = "error";
+        return;
+      }
+      this.cloudKeys.busy = true;
+      this.cloudKeys.message = "";
+      try {
+        const r = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
+        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key"]) {
+          this.cloudKeys[k + "_set"] = !!data[k + "_set"];
+          this.cloudKeys[k + "_masked"] = data[k + "_masked"] || "";
+        }
+        this.cloudKeys.cfAccount = ""; this.cloudKeys.cfToken = ""; this.cloudKeys.together = "";
+        this.cloudKeys.showCfToken = false; this.cloudKeys.showTogether = false;
+        this.cloudKeys.message = "Saved. Cloud models using these providers can now generate.";
+        this.cloudKeys.messageKind = "success";
+        this.pushToast({ kind: "success", icon: "✓", title: "Cloud keys saved", body: "" });
+      } catch (e) {
+        this.cloudKeys.message = String(e.message || e);
+        this.cloudKeys.messageKind = "error";
+        this.pushToast({ kind: "error", icon: "✗", title: "Couldn't save cloud keys",
+          body: this.cloudKeys.message });
+      } finally {
+        this.cloudKeys.busy = false;
+      }
+    },
+
+    async clearCloudKeys() {
+      this.cloudKeys.busy = true;
+      this.cloudKeys.message = "";
+      try {
+        const r = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ cloudflare_account_id: "", cloudflare_api_token: "", together_api_key: "" }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
+        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key"]) {
+          this.cloudKeys[k + "_set"] = !!data[k + "_set"];
+          this.cloudKeys[k + "_masked"] = data[k + "_masked"] || "";
+        }
+        this.cloudKeys.message = "Cleared all cloud provider keys.";
+        this.cloudKeys.messageKind = "info";
+      } catch (e) {
+        this.cloudKeys.message = String(e.message || e);
+        this.cloudKeys.messageKind = "error";
+      } finally {
+        this.cloudKeys.busy = false;
+      }
     },
 
     async refreshConnectivity() {

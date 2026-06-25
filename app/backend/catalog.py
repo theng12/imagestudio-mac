@@ -75,6 +75,20 @@ FAMILIES: dict[str, Family] = {
             "Hugging Face page before downloading."
         ),
     ),
+    "flux1-krea": Family(
+        id="flux1-krea",
+        label="FLUX.1 Krea dev",
+        summary=(
+            "Black Forest Labs × Krea's opinionated FLUX.1 dev finetune, tuned "
+            "for photorealism and a less 'AI-looking' aesthetic — fewer plastic "
+            "skin / blown-out-highlight tells than stock FLUX.1 dev."
+        ),
+        how_to_use=(
+            "Use guidance 3.5-5.0 and 20-30 steps, same as FLUX.1 dev — the UI "
+            "defaults match. Gated on Hugging Face: accept the license on the "
+            "repo page first. Best when stock FLUX output looks too synthetic."
+        ),
+    ),
     "flux1-kontext": Family(
         id="flux1-kontext",
         label="FLUX.1 Kontext",
@@ -147,6 +161,85 @@ FAMILIES: dict[str, Family] = {
             "guidance 4.0."
         ),
     ),
+    # ── Diffusers-engine families (v1.9.0) — PyTorch/MPS, NOT mflux ──────────
+    "sd35": Family(
+        id="sd35",
+        label="Stable Diffusion 3.5",
+        summary=(
+            "Stability AI's Stable Diffusion 3.5 — a strong general-purpose "
+            "text-to-image model. Runs via the HuggingFace diffusers engine on "
+            "PyTorch/MPS (not mflux/MLX), so it's slower than the FLUX-MLX models "
+            "but is the gateway to the broader diffusers model ecosystem."
+        ),
+        how_to_use=(
+            "Standard txt2img prompts. Recommended ~28 steps, guidance ~3.5-4.5 "
+            "(the FLUX-style 4-step defaults will look bad — raise the steps). "
+            "Gated on Hugging Face: accept the license on the repo page and set "
+            "your HF token in Settings first. The first generation is slow (the "
+            "pipeline loads + warms up on MPS); later ones reuse the loaded model."
+        ),
+    ),
+    "seedvr2": Family(
+        id="seedvr2",
+        label="SeedVR2 (upscaler)",
+        summary=(
+            "SeedVR2 — a diffusion-based image upscaler / restorer, NOT a "
+            "text-to-image model. Give it an image and it reconstructs a higher-"
+            "resolution version. Self-contained: one repo, no base model needed."
+        ),
+        how_to_use=(
+            "Use the Image-to-Image tab: attach the image you want to upscale and "
+            "generate. SeedVR2 ignores the prompt, guidance, steps, and strength "
+            "controls — it just upscales (currently a fixed 2× of the input). "
+            "The 7B model is heavy; best on a high-memory Mac (M3 Ultra is ideal)."
+        ),
+    ),
+    # ── Cloud families (v1.5.0) — NOT mflux engines; routed via providers/ ──
+    "pollinations": Family(
+        id="pollinations",
+        label="Pollinations (cloud, free)",
+        summary=(
+            "Free hosted text-to-image via Pollinations.ai — no API key, no "
+            "download, no local GPU. Runs on Pollinations' servers, so your "
+            "prompt leaves this Mac. Best-effort and rate-limited."
+        ),
+        how_to_use=(
+            "Pick it like any model and generate — there's nothing to download. "
+            "Standard txt2img prompts. Because it's a free shared service, expect "
+            "variable latency and occasional queueing. Don't send private or "
+            "sensitive prompts to a third-party cloud service."
+        ),
+    ),
+    "cloudflare": Family(
+        id="cloudflare",
+        label="Cloudflare Workers AI (cloud)",
+        summary=(
+            "Image generation on Cloudflare's Workers AI edge network. Free tier: "
+            "10,000 'neurons'/day, no credit card. Needs a free Cloudflare Account "
+            "ID + API token (set them once in Settings → Cloud provider keys)."
+        ),
+        how_to_use=(
+            "Add your Cloudflare Account ID + API token in Settings, then pick a "
+            "Cloudflare model and generate. FLUX.1 schnell runs in 1-8 steps. The "
+            "Workers AI schnell endpoint outputs a fixed size (it ignores the "
+            "width/height controls). Runs on Cloudflare's servers — prompts leave "
+            "this Mac."
+        ),
+    ),
+    "together": Family(
+        id="together",
+        label="Together AI (cloud)",
+        summary=(
+            "Image generation via Together AI. The FLUX.1 [schnell] Free endpoint "
+            "is free with a (free) Together API key; new accounts also get trial "
+            "credits for the paid endpoints. Set the key in Settings."
+        ),
+        how_to_use=(
+            "Add your Together API key in Settings, then pick a Together model and "
+            "generate. The free schnell endpoint honors width/height and caps at "
+            "4 steps. Runs on Together's servers — prompts leave this Mac."
+        ),
+    ),
 }
 
 
@@ -175,10 +268,37 @@ class ModelEntry:
     # artifacts on multi-subject scenes, and saying so up front avoids the
     # "this model sucks" reaction after a bad generation.
     use_cases: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    # ── Cloud-provider routing (v1.5.0) ─────────────────────────────────────
+    # Local models leave these at defaults. A cloud model sets provider="cloud"
+    # + cloud_provider (a registry id in app/backend/providers) + cloud_model_id
+    # (the model name to request from that provider). Cloud models have NO
+    # Hugging Face download — `repo` is a synthetic stable id used only as the
+    # catalog key + job param, never fetched from HF. cache state is synthesised
+    # as "cached" by the /api/catalog endpoint so the UI treats them as ready.
+    provider: str = "local"                 # "local" | "cloud"
+    cloud_provider: Optional[str] = None    # e.g. "pollinations"
+    cloud_model_id: Optional[str] = None    # provider-specific model name, e.g. "flux"
+    # ── Local inference engine (v1.9.0) ─────────────────────────────────────
+    # Which engine runs a LOCAL model. "mflux" (default) = Apple MLX via mflux.
+    # "diffusers" = HuggingFace diffusers on PyTorch/MPS, for models mflux has no
+    # class for (SD3.5, Sana, Ideogram 4, …). Cloud models ignore this — a
+    # provider="cloud" entry short-circuits before engine dispatch.
+    engine: str = "mflux"                   # "mflux" | "diffusers"
+    # Optional explicit diffusers pipeline class name (e.g. "StableDiffusion3Pipeline"
+    # or a custom "Ideogram4Pipeline"). None → AutoPipelineForText2Image resolves it.
+    diffusers_pipeline: Optional[str] = None
 
     @property
     def is_apple_optimized(self) -> bool:
         return self.quantization is not None and self.quantization.startswith("mlx")
+
+    @property
+    def is_cloud(self) -> bool:
+        return self.provider == "cloud"
+
+    @property
+    def is_diffusers(self) -> bool:
+        return self.engine == "diffusers"
 
 
 CATALOG: tuple[ModelEntry, ...] = (
@@ -376,6 +496,30 @@ CATALOG: tuple[ModelEntry, ...] = (
     # black-forest-labs/FLUX.1-dev entry above still works via on-the-fly
     # quantization (mflux loads + quantizes during weight loading).
 
+    # ──────────── FLUX.1 Krea dev (photorealism finetune) — new in v1.5.0 ──────
+    # Rides the same mflux Flux1 class as schnell/dev. _generate_flux1 selects
+    # ModelConfig.krea_dev() for this family. Pure txt2img/img2img, no new deps
+    # beyond the existing FLUX.1 stack — a near drop-in catalog add.
+    ModelEntry(
+        repo="black-forest-labs/FLUX.1-Krea-dev",
+        label="FLUX.1 Krea dev",
+        family="flux1-krea",
+        size_gb=24.0,
+        gated=True,
+        min_unified_memory_gb=24,
+        recommended_hardware="M2 Pro 32 GB+ for the full checkpoint. License-gated (HF token + license acceptance).",
+        capabilities=("txt2img", "img2img"),
+        best_for="BFL × Krea's photorealism-tuned FLUX.1 — noticeably less 'AI-looking' than stock FLUX.1 dev (more natural skin, lighting, texture). Pick this over FLUX.1 dev when you want photographic realism rather than the default glossy FLUX look.",
+        use_cases=(
+            ("good",  "Photorealistic portraits + people — more natural skin/lighting than stock FLUX.1 dev"),
+            ("good",  "Editorial / lifestyle / documentary-style photography"),
+            ("good",  "Anything where stock FLUX output looks too glossy or synthetic"),
+            ("weak",  "License is non-commercial — personal projects only"),
+            ("avoid", "16 GB Macs — 24 GB checkpoint; use an MLX-quant klein for tight memory"),
+            ("avoid", "Quick iteration — 20-30 steps; use FLUX.1 schnell or a klein quant for speed"),
+        ),
+    ),
+
     # ──────────── FLUX.1 Kontext (dedicated instruction-edit model) ────────────
     # Wired via _generate_kontext (mflux's Flux1Kontext). Requires an input
     # image — txt2img-only flows will error with a clear "needs reference" message.
@@ -556,6 +700,126 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("weak",  "20 GB download — biggest catalog entry"),
         ),
     ),
+
+    # ──────────── Diffusers engine (PyTorch/MPS) — new in v1.9.0 ────────────
+    # Routed via _generate_diffusers (HuggingFace diffusers), NOT mflux. Phase A
+    # proof model: Stable Diffusion 3.5 Large. engine="diffusers" entries are
+    # excluded from audit_truth.py (it audits mflux wiring only). Needs the
+    # diffusers/torch deps from requirements-generation.txt (Install Generation).
+    ModelEntry(
+        repo="stabilityai/stable-diffusion-3.5-large",
+        label="Stable Diffusion 3.5 Large",
+        family="sd35",
+        size_gb=20.0,
+        gated=True,
+        min_unified_memory_gb=24,
+        recommended_hardware="High-memory Apple Silicon (M2 Max / M3 Max / M3 Ultra). Runs on PyTorch/MPS — slower than the MLX models.",
+        capabilities=("txt2img",),
+        engine="diffusers",
+        best_for="Stability AI's SD3.5 Large via the diffusers engine — a strong, well-supported general txt2img model, and the proof-of-concept for running non-FLUX models locally. Gated (HF token + license). Runs on MPS, so slower than the FLUX-MLX models.",
+        use_cases=(
+            ("good",  "General-purpose txt2img with the broad SD3.5 ecosystem"),
+            ("good",  "Opens the diffusers model zoo this engine unlocks (Ideogram 4, Sana, …)"),
+            ("weak",  "PyTorch/MPS is slower than mflux/MLX — expect longer generations"),
+            ("weak",  "Gated + large download — needs HF token + license acceptance"),
+            ("avoid", "Fast iteration on a small Mac — use an MLX klein quant for that"),
+        ),
+    ),
+
+    # ──────────── SeedVR2 upscaler (image restoration) — new in v1.7.0 ──────
+    # Self-contained single repo (numz/SeedVR2_comfyUI), no base model. Wired via
+    # _generate_seedvr2 (mflux's SeedVR2). Lives in the Image-to-Image tab because
+    # it needs an input image; prompt/guidance/steps/strength are ignored.
+    ModelEntry(
+        repo="numz/SeedVR2_comfyUI",
+        label="SeedVR2 7B — Upscaler",
+        family="seedvr2",
+        size_gb=18.0,   # rough — the 7B weights
+        gated=False,
+        min_unified_memory_gb=24,
+        recommended_hardware="High-memory Apple Silicon (M2 Max / M3 Max / M3 Ultra). The 7B upscaler is heavy.",
+        capabilities=("img2img",),
+        best_for="Diffusion upscaler / restorer — turn a small or soft image into a higher-resolution one. Use the Image-to-Image tab, attach an image, and generate; it upscales ~2×. NOT a txt2img model — the prompt / steps / strength controls are ignored.",
+        use_cases=(
+            ("good",  "Upscaling + restoring generated images to higher resolution"),
+            ("good",  "Cleaning up soft / low-res photos (diffusion restoration)"),
+            ("good",  "Two-pass workflow: fast low-res generation → SeedVR2 upscale"),
+            ("weak",  "Heavy 7B model — best on 24 GB+ (ideal on M3 Ultra)"),
+            ("avoid", "Text-to-image — SeedVR2 only upscales an existing image, it can't generate from a prompt"),
+            ("avoid", "Exact output sizing — currently a fixed ~2× upscale (no scale control in the UI yet)"),
+        ),
+    ),
+
+    # ──────────── Cloud providers (v1.5.0) — free, no local GPU ────────────
+    # These do NOT use mflux. provider="cloud" routes _dispatch_txt2img to the
+    # providers/ registry instead of a local inference class. `repo` is a
+    # synthetic stable id (never fetched from HF); /api/catalog synthesises a
+    # "cached" cache state so the UI shows them ready with no download button.
+    # Excluded from audit_truth.py (it audits mflux wiring only).
+    ModelEntry(
+        repo="pollinations/flux",
+        label="Pollinations FLUX (cloud, free)",
+        family="pollinations",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs in the cloud. Works on any Mac; no GPU or download needed.",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="pollinations",
+        cloud_model_id="flux",
+        best_for="Zero-setup free image generation in the cloud — no download, no API key, no local GPU. Great for trying the app instantly or generating on a Mac that can't run the local MLX models. Your prompt is sent to Pollinations' servers.",
+        use_cases=(
+            ("good",  "Instant first generation — nothing to download or install"),
+            ("good",  "Macs without the memory/GPU for local FLUX (8 GB, Intel, etc.)"),
+            ("good",  "Quick throwaway concepts where local/offline isn't needed"),
+            ("weak",  "Variable latency + rate limits — it's a free shared service"),
+            ("avoid", "Private or sensitive prompts — they leave your Mac for a 3rd-party server"),
+            ("avoid", "Reproducible/seed-locked pipelines — cloud output is best-effort, not deterministic"),
+        ),
+    ),
+    ModelEntry(
+        repo="cloudflare/flux-1-schnell",
+        label="FLUX.1 schnell — Cloudflare (cloud)",
+        family="cloudflare",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="cloudflare",
+        cloud_model_id="@cf/black-forest-labs/flux-1-schnell",
+        best_for="Free cloud FLUX.1 schnell on Cloudflare's edge — fast, with a real free-tier quota (10k neurons/day). Needs a free Cloudflare Account ID + API token. Pick this over the no-key Pollinations option when you want better/known rate limits.",
+        use_cases=(
+            ("good",  "Free, fast schnell generation with a real free-tier quota"),
+            ("good",  "Macs without the GPU/memory for local FLUX"),
+            ("weak",  "Fixed output size — the schnell endpoint ignores width/height"),
+            ("weak",  "Requires a (free) Cloudflare Account ID + API token in Settings"),
+            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
+        ),
+    ),
+    ModelEntry(
+        repo="together/flux-1-schnell-free",
+        label="FLUX.1 schnell Free — Together (cloud)",
+        family="together",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Together AI. Needs a free Together API key (Settings).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="together",
+        cloud_model_id="black-forest-labs/FLUX.1-schnell-Free",
+        best_for="Together AI's free FLUX.1 [schnell] endpoint — honors width/height (so the aspect-ratio presets work), 4-step schnell. Needs a free Together API key. Pick this over Cloudflare when you want custom aspect ratios in the cloud.",
+        use_cases=(
+            ("good",  "Free schnell with custom width/height (aspect-ratio presets apply)"),
+            ("good",  "Macs without the GPU/memory for local FLUX"),
+            ("weak",  "Free endpoint caps at 4 steps"),
+            ("weak",  "Requires a (free) Together API key in Settings"),
+            ("avoid", "Private/sensitive prompts — they're sent to Together's servers"),
+        ),
+    ),
 )
 
 
@@ -591,6 +855,15 @@ def serialize_model(m: ModelEntry) -> dict:
         # New in v1.1 — structured use cases + hardware fit verdict.
         "use_cases": [{"kind": k, "text": t} for k, t in m.use_cases],
         "fit": fit,   # {state, label, hint, actual_gb, required_gb} or None
+        # New in v1.5.0 — cloud-provider routing. Local models report
+        # provider="local" and null cloud_* fields.
+        "provider": m.provider,
+        "cloud_provider": m.cloud_provider,
+        "cloud_model_id": m.cloud_model_id,
+        "is_cloud": m.is_cloud,
+        # New in v1.9.0 — local inference engine (mflux vs diffusers).
+        "engine": m.engine,
+        "is_diffusers": m.is_diffusers,
     }
 
 

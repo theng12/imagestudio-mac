@@ -9,8 +9,23 @@ and MLX.
 
 ## What it does today
 
-- Browse a curated catalog of FLUX models (FLUX.2 klein, FLUX.2 dev,
-  FLUX.1 schnell/dev, MLX-quantized variants).
+- Browse a curated catalog of FLUX-family models (FLUX.2 klein, FLUX.2 dev,
+  FLUX.1 schnell/dev/**Krea**, Kontext, Qwen-Image, FIBO, Z-Image, and
+  MLX-quantized variants), plus a **SeedVR2** image upscaler (in the
+  Image-to-Image tab).
+- **Two local engines.** Most models run on **mflux/MLX** (Apple-native, fast).
+  A second **diffusers** engine (PyTorch/MPS) runs models mflux has no class for
+  — starting with **Stable Diffusion 3.5 Large** — and is the path to the wider
+  diffusers ecosystem (Ideogram 4, Sana, …). Each model declares its `engine`;
+  diffusers models behave like any other local model in the UI but need the
+  `torch`/`diffusers` deps (run **Install Generation**).
+- **Cloud option (free):** alongside the local MLX models, the catalog includes
+  **Pollinations FLUX** — a `provider="cloud"` entry that generates on
+  Pollinations' free hosted API. No API key, no download, no local GPU; it runs
+  on any Mac. Your prompt is sent to a third-party server and output is
+  best-effort/rate-limited, so it's a convenience option, not a replacement for
+  the local, offline, deterministic MLX models. See
+  [Cloud providers](#cloud-providers-free) below.
 - See at a glance which models are cached locally vs. need downloading.
 - Confirm-before-download dialog with on-disk size and unified-memory
   recommendations so you don't accidentally fetch 60 GB.
@@ -123,6 +138,71 @@ curl -N http://<server>:<port>/api/downloads/stream
    `PINOKIO_SHARE_LOCAL=true`.
 2. Restart the launcher. Pinokio prints a LAN URL alongside the local one.
 3. From your main Mac, point requests at that LAN URL.
+
+## Cloud providers (free)
+
+Most models in Image Studio KH run **locally** on Apple Silicon via mflux/MLX.
+A second class of model — catalog entries with `provider: "cloud"` — generates
+on a hosted API instead. There are three, all free:
+
+| Model (`repo`) | Provider | Key needed? | Notes |
+|---|---|---|---|
+| `pollinations/flux` | Pollinations | **None** | Zero-setup; fixed best-effort service |
+| `cloudflare/flux-1-schnell` | Cloudflare Workers AI | Account ID + API token | Free tier 10k neurons/day; **fixed output size** |
+| `together/flux-1-schnell-free` | Together AI | API key | Free schnell endpoint; honors width/height, 4 steps |
+
+Keys for the keyed providers are entered once in **Settings → Cloud provider
+keys** (stored in `app/backend/settings.json`, gitignored, sent only to that
+provider). The examples below use Pollinations because it needs no key, but the
+flow is identical for the others once their key is saved.
+
+**How it works**
+
+- No download, no local GPU, no `Install Generation` required — the cloud path
+  is a plain HTTPS request, so it works on any Mac.
+- In the UI it appears in the **Models** tab as ready (no download button) and
+  in the **Generate** tab's model dropdown like any other txt2img model.
+- Trade-offs: your prompt is sent to **Pollinations' servers** (don't use it for
+  private/sensitive prompts), latency is variable, the service is rate-limited,
+  and output is **not deterministic** even with a fixed seed.
+
+**Generate with the cloud model — same endpoint as local models:**
+
+```sh
+# Curl — start a job against the cloud model (note: no download step needed)
+curl -X POST http://<server>:<port>/api/generate/txt2img \
+  -H 'content-type: application/json' \
+  -d '{"repo": "pollinations/flux", "prompt": "a red apple on a wooden table", "width": 1024, "height": 1024}'
+# → {"job": {"id": "...", "state": "running", ...}}
+# Poll GET /api/generate/jobs/{id}; fetch the PNG at /api/generate/jobs/{id}/image
+```
+
+```javascript
+// JavaScript
+const res = await fetch("http://<server>:<port>/api/generate/txt2img", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ repo: "pollinations/flux", prompt: "a neon koi pond at night", width: 1024, height: 1024 }),
+});
+const { job } = await res.json();
+```
+
+```python
+# Python
+import requests
+r = requests.post("http://<server>:<port>/api/generate/txt2img", json={
+    "repo": "pollinations/flux", "prompt": "a misty pine forest", "width": 1024, "height": 1024,
+})
+job = r.json()["job"]
+```
+
+**Adding more cloud providers.** Drop a `CloudProvider` subclass into
+`app/backend/providers/`, register it in `providers/__init__.py`'s `_REGISTRY`,
+then add a catalog `ModelEntry` with `provider="cloud"`, a matching
+`cloud_provider` id, and a `cloud_model_id`. Providers that need an API key
+should read it from settings/`ENVIRONMENT` (Pollinations needs none). Cloud
+entries are intentionally excluded from `audit_truth.py`, which only audits the
+local mflux engine wiring.
 
 ## Phase 2 (coming)
 

@@ -24,6 +24,19 @@ _LOCK = threading.Lock()
 
 DEFAULTS: dict[str, Any] = {
     "hf_token": "",
+    # Cloud-provider credentials (v1.6.0). Pollinations needs none; these are
+    # only used by keyed providers (Cloudflare Workers AI, Together AI).
+    "cloudflare_account_id": "",
+    "cloudflare_api_token": "",
+    "together_api_key": "",
+}
+
+# Cloud-provider credential mapping: provider id -> the settings keys it needs.
+# Read by generation._generate_cloud to build the per-provider config dict.
+CLOUD_CREDENTIAL_KEYS: dict[str, list[str]] = {
+    "pollinations": [],
+    "cloudflare": ["cloudflare_account_id", "cloudflare_api_token"],
+    "together": ["together_api_key"],
 }
 
 _cache: dict[str, Any] = {}
@@ -74,13 +87,37 @@ def set_hf_token(token: Optional[str]) -> None:
     set_value("hf_token", (token or "").strip())
 
 
+def get_cloud_credentials(provider_id: str) -> dict:
+    """Return {settings_key: value} for the given cloud provider's keys.
+    Empty dict for providers that need no credentials (e.g. Pollinations)."""
+    out: dict[str, str] = {}
+    for k in CLOUD_CREDENTIAL_KEYS.get(provider_id, []):
+        v = get(k)
+        out[k] = v.strip() if isinstance(v, str) else (v or "")
+    return out
+
+
+def _mask(value: Optional[str]) -> str:
+    """First 3 + last 4 chars, or bullets for short values; '' when empty."""
+    if not value:
+        return ""
+    return value[:3] + "…" + value[-4:] if len(value) >= 10 else "•" * len(value)
+
+
 def serialize_public() -> dict:
     """
-    Caller-safe view: never includes the raw token. Returns a masked preview
-    (first 3 + last 4 chars) so users can confirm the right token is saved.
+    Caller-safe view: never includes a raw secret. Returns masked previews
+    (first 3 + last 4 chars) so users can confirm the right values are saved.
     """
     token = get_hf_token()
-    if not token:
-        return {"hf_token_set": False, "hf_token_masked": ""}
-    masked = token[:3] + "…" + token[-4:] if len(token) >= 10 else "•" * len(token)
-    return {"hf_token_set": True, "hf_token_masked": masked}
+    out: dict[str, Any] = {
+        "hf_token_set": bool(token),
+        "hf_token_masked": _mask(token),
+    }
+    # Cloud-provider credentials — masked status only, never the raw value.
+    for key in ("cloudflare_account_id", "cloudflare_api_token", "together_api_key"):
+        v = get(key)
+        v = v.strip() if isinstance(v, str) else ""
+        out[f"{key}_set"] = bool(v)
+        out[f"{key}_masked"] = _mask(v)
+    return out

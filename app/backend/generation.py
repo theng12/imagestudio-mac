@@ -68,6 +68,10 @@ _PACKAGE_CHECKLIST = [
     ("safetensors",     "Weight file loading"),
     ("sentencepiece",   "Tokenizer backend for FLUX/Qwen text encoders"),
     ("huggingface_hub", "Model registry + cache access"),
+    # diffusers engine (v1.9.0) — second local backend (PyTorch/MPS).
+    ("torch",           "PyTorch w/ MPS (diffusers engine)"),
+    ("diffusers",       "HuggingFace diffusers (2nd local engine)"),
+    ("accelerate",      "diffusers model loading helper"),
 ]
 
 # Per-engine dependency requirements. Family ids must match the catalog.
@@ -76,6 +80,10 @@ _ENGINE_REQUIREMENTS = {
     "flux2-dev":     ["mflux", "mlx", "Pillow", "numpy"],
     "flux1-schnell": ["mflux", "mlx", "Pillow", "numpy"],
     "flux1-dev":     ["mflux", "mlx", "Pillow", "numpy"],
+    "flux1-krea":    ["mflux", "mlx", "Pillow", "numpy"],
+    "seedvr2":       ["mflux", "mlx", "Pillow", "numpy"],
+    # diffusers-engine families (v1.9.0) — PyTorch/MPS, not mflux/MLX.
+    "sd35":          ["torch", "diffusers", "Pillow", "numpy"],
     # roadmap engines — declared so the UI shows what they'll need
     "flux1-kontext": ["mflux", "mlx", "Pillow", "numpy"],
     "qwen-edit":     ["transformers", "mlx", "Pillow", "numpy"],
@@ -96,18 +104,26 @@ _ENGINE_REQUIREMENTS = {
 # - flux2-klein   ← _generate_flux2_klein + _generate_klein_edit
 # - flux1-schnell ← _generate_flux1 (mflux's Flux1 with ModelConfig.schnell())
 # - flux1-dev     ← _generate_flux1 (mflux's Flux1 with ModelConfig.dev())
+# - flux1-krea    ← _generate_flux1 (mflux's Flux1 with ModelConfig.krea_dev()) — v1.5.0
 # - flux1-kontext ← _generate_kontext (mflux's Flux1Kontext)
 # - qwen-image    ← _generate_qwen_image (mflux's QwenImage) — v1.3.0
 # - qwen-edit     ← _generate_qwen_edit (mflux's QwenImageEdit) — v1.3.0
 # - fibo          ← _generate_fibo (mflux's FIBO + FIBOEdit) — v1.3.0
 # - z-image       ← _generate_z_image (mflux's ZImage) — v1.3.0
+# - seedvr2       ← _generate_seedvr2 (mflux's SeedVR2 upscaler; img2img tab) — v1.7.0
 #
 # NOT wired (no mflux inference class):
 # - flux2-dev — mflux has no Flux2Dev class. Would need a future mflux release.
 _WIRED_FAMILIES = {
-    "flux2-klein", "flux1-schnell", "flux1-dev", "flux1-kontext",
-    "qwen-image", "qwen-edit", "fibo", "z-image",
+    "flux2-klein", "flux1-schnell", "flux1-dev", "flux1-krea", "flux1-kontext",
+    "qwen-image", "qwen-edit", "fibo", "z-image", "seedvr2",
 }
+
+# Families that run on the diffusers engine (PyTorch/MPS) instead of mflux. They
+# don't go through mflux family dispatch (routed by `engine` in _dispatch_txt2img),
+# so they're tracked separately and excluded from the mflux truth audit. Listed
+# here so diagnostics() can mark them "wired" once torch/diffusers are installed.
+_DIFFUSERS_FAMILIES = {"sd35"}
 
 
 def _probe_package(display_name: str, import_name: Optional[str] = None) -> dict:
@@ -144,7 +160,7 @@ def diagnostics() -> dict:
     for family, requires in _ENGINE_REQUIREMENTS.items():
         missing = [p for p in requires if not pkg_status.get(p)]
         deps_ok = not missing
-        wired = family in _WIRED_FAMILIES
+        wired = family in _WIRED_FAMILIES or family in _DIFFUSERS_FAMILIES
         engine_results.append({
             "family": family,
             "requires": requires,
@@ -657,7 +673,12 @@ class GenerationManager:
             job.started_at = time.time()
             print(f"[gen] starting {job.job_id}: {job.params}", flush=True)
 
-            if not MFLUX_AVAILABLE:
+            # Cloud models don't need mflux — they're an HTTP call. Only gate the
+            # local engines behind the mflux availability check.
+            _repo = job.params.get("repo")
+            _model = catalog.get_model(_repo) if _repo else None
+            _is_cloud = bool(_model and _model.is_cloud)
+            if not MFLUX_AVAILABLE and not _is_cloud:
                 job.state = "error"
                 job.error = f"mflux not installed: {MFLUX_IMPORT_ERROR}"
                 job.finished_at = time.time()
@@ -698,15 +719,29 @@ class GenerationManager:
         model = catalog.get_model(repo)
         if model is None:
             raise ValueError(f"Repo {repo} is not in the catalog")
+
+        # Cloud models route to a provider (HTTP), not a local mflux class, and
+        # have nothing to cache — handle them before the local cache check.
+        if model.is_cloud:
+            self._generate_cloud(job, model, output_path)
+            return
+
         if cache.cache_state(repo) != "cached":
             raise ValueError(f"Model {repo} is not fully cached locally — download it first")
+
+        # Diffusers-engine models run on PyTorch/MPS via a separate worker,
+        # routed by engine (not by mflux family). Handle before family dispatch.
+        if model.is_diffusers:
+            self._generate_diffusers(job, model, output_path)
+            return
 
         family = model.family
         if family == "flux2-klein":
             self._generate_flux2_klein(job, output_path)
-        elif family in ("flux1-schnell", "flux1-dev"):
-            # mflux ships ONE Flux1 class that handles both schnell + dev — the
-            # variant is selected via ModelConfig.schnell() vs ModelConfig.dev().
+        elif family in ("flux1-schnell", "flux1-dev", "flux1-krea"):
+            # mflux ships ONE Flux1 class that handles schnell, dev, AND the Krea
+            # finetune — the variant is selected via the ModelConfig (schnell() /
+            # dev() / krea_dev()) inside _generate_flux1.
             self._generate_flux1(job, model, output_path)
         elif family == "qwen-image":
             self._generate_qwen_image(job, model, output_path)
@@ -714,6 +749,8 @@ class GenerationManager:
             self._generate_fibo(job, model, output_path)
         elif family == "z-image":
             self._generate_z_image(job, model, output_path)
+        elif family == "seedvr2":
+            self._generate_seedvr2(job, model, output_path)
         elif family == "flux2-dev":
             raise NotImplementedError(
                 "FLUX.2 dev isn't supported by mflux yet — only FLUX.2 klein has "
@@ -724,6 +761,204 @@ class GenerationManager:
             raise NotImplementedError(
                 f"No txt2img worker implemented for family '{family}'."
             )
+
+    def _generate_diffusers(self, job: GenerationJob, model_entry, output_path: Path) -> None:
+        """
+        Run a model via HuggingFace diffusers on PyTorch/MPS — the second local
+        engine (v1.9.0), for models mflux has no class for (SD3.5, Sana, Ideogram
+        4, …). Loads from the app's HF cache (same HF_HOME as downloads), runs on
+        Apple's MPS device, and saves a PNG. The loaded pipeline is cached in
+        the process so repeat generations skip the multi-GB reload.
+
+        Requires the diffusers/torch deps from requirements-generation.txt — if
+        they're missing, the import error below is surfaced to the user as a
+        clear job error telling them to run Install Generation.
+        """
+        try:
+            import torch  # type: ignore
+        except Exception as e:
+            raise RuntimeError(
+                "The diffusers engine needs PyTorch, which isn't installed. "
+                "Run 'Install Generation' to add the torch/diffusers deps "
+                f"(import error: {type(e).__name__}: {e})."
+            ) from e
+
+        from . import settings as app_settings
+
+        params = job.params
+        repo = params["repo"]
+
+        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        # bf16 is the recommended dtype for SD3-class models (fp16 can yield black
+        # images) and is supported on recent MPS; CPU falls back to float32.
+        dtype = torch.bfloat16 if device == "mps" else torch.float32
+        token = app_settings.get_hf_token()
+
+        pipe = self._load_diffusers_pipeline(model_entry, repo=repo, dtype=dtype, token=token)
+        pipe = pipe.to(device)
+
+        seed = params.get("seed")
+        if seed is None or seed < 0:
+            import random
+            seed = random.randint(0, 2**32 - 1)
+        job.resolved_seed = int(seed)
+        generator = torch.Generator(device=device).manual_seed(int(seed))
+
+        negative = (params.get("negative_prompt") or "").strip() or None
+        print(
+            f"[gen] diffusers {repo} on {device} ({dtype}) "
+            f"{params.get('width')}x{params.get('height')} steps={params.get('steps')}",
+            flush=True,
+        )
+        result = pipe(
+            prompt=params["prompt"],
+            negative_prompt=negative,
+            num_inference_steps=int(params.get("steps", 28)),
+            guidance_scale=float(params.get("guidance", 3.5)),
+            height=int(params["height"]),
+            width=int(params["width"]),
+            generator=generator,
+        )
+        image = result.images[0]
+        image.save(str(output_path))
+
+    def _load_diffusers_pipeline(self, model_entry, *, repo, dtype, token):
+        """
+        Load the diffusers pipeline for `repo`, caching ONE pipeline in-process
+        (keyed by repo) so back-to-back generations don't reload multi-GB weights.
+        Switching models evicts the previous pipeline (bounded memory). All
+        generation is serialized by _GEN_LOCK, so no concurrency guard is needed.
+        """
+        prev = getattr(self, "_diffusers_pipe", None)   # (repo, pipe) or None
+        if prev is not None and prev[0] == repo:
+            return prev[1]
+
+        # Evict any previously loaded pipeline before loading a new one.
+        if prev is not None:
+            self._diffusers_pipe = None
+            del prev
+            try:
+                import torch  # type: ignore
+                if torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+            except Exception:
+                pass
+
+        if model_entry.diffusers_pipeline:
+            # Explicit pipeline class (e.g. a custom Ideogram4Pipeline).
+            import importlib
+            mod = importlib.import_module("diffusers")
+            pipe_cls = getattr(mod, model_entry.diffusers_pipeline)
+            pipe = pipe_cls.from_pretrained(repo, torch_dtype=dtype, token=token)
+        else:
+            # Let diffusers resolve the right pipeline from model_index.json.
+            from diffusers import AutoPipelineForText2Image  # type: ignore
+            pipe = AutoPipelineForText2Image.from_pretrained(repo, torch_dtype=dtype, token=token)
+
+        self._diffusers_pipe = (repo, pipe)
+        return pipe
+
+    def _generate_seedvr2(self, job: GenerationJob, model_entry, output_path: Path) -> None:
+        """
+        SeedVR2 — diffusion upscaler / restorer. Takes the uploaded image and
+        reconstructs a higher-resolution version (fixed ~2× of the input's short
+        side). NOT txt2img: the prompt / guidance / steps / strength controls are
+        ignored. Lives in the Image-to-Image tab because it needs an input image.
+        Self-contained — one repo (numz/SeedVR2_comfyUI), no base model.
+        """
+        from mflux.models.seedvr2.variants.upscale.seedvr2 import SeedVR2  # type: ignore
+        from mflux.models.common.config.model_config import ModelConfig  # type: ignore
+        from mflux.utils.scale_factor import ScaleFactor  # type: ignore
+
+        params = job.params
+        repo = params["repo"]
+        image_path = params.get("image_path")
+        if not image_path:
+            raise RuntimeError(
+                "SeedVR2 is an upscaler — it needs an input image. Use the "
+                "Image-to-Image tab and attach the image you want to upscale."
+            )
+
+        model = SeedVR2(
+            quantize=params.get("quantize"),
+            model_path=repo,
+            model_config=ModelConfig.seedvr2_7b(),
+        )
+
+        seed = params.get("seed")
+        if seed is None or seed < 0:
+            import random
+            seed = random.randint(0, 2**32 - 1)
+        job.resolved_seed = int(seed)
+
+        # Fixed 2× upscale of the input's short side. The generate form has no
+        # scale control yet; a dedicated upscale UI is a future enhancement.
+        result = model.generate_image(
+            seed=int(seed),
+            image_path=image_path,
+            resolution=ScaleFactor(2.0),
+        )
+        if not hasattr(result, "save"):
+            raise RuntimeError("mflux SeedVR2 returned an unexpected result; expected GeneratedImage.")
+        result.save(str(output_path), overwrite=True)
+
+    def _generate_cloud(self, job: GenerationJob, model_entry, output_path: Path) -> None:
+        """
+        Route a cloud (provider="cloud") model to its provider in
+        app/backend/providers. No mflux, no local weights — just an HTTP call.
+        The provider returns encoded image bytes which we normalise to PNG.
+        """
+        from . import providers  # lazy: keeps providers optional at import time
+        from . import settings as app_settings
+
+        params = job.params
+        provider = providers.get_provider(model_entry.cloud_provider or "")
+        if provider is None:
+            raise RuntimeError(
+                f"No cloud provider registered for '{model_entry.cloud_provider}'."
+            )
+        # Resolve this provider's credentials (api keys etc.) from app settings.
+        # Keyless providers (Pollinations) get an empty config and ignore it.
+        config = app_settings.get_cloud_credentials(model_entry.cloud_provider or "")
+
+        seed = params.get("seed")
+        if seed is None or seed < 0:
+            import random
+            seed = random.randint(0, 2**32 - 1)
+        job.resolved_seed = int(seed)
+
+        # Cloud providers don't report step progress — present an indeterminate
+        # single-step job so the UI spinner still animates.
+        job.total_steps = 1
+        job.current_step = 0
+
+        req = providers.CloudRequest(
+            prompt=params["prompt"],
+            width=int(params["width"]),
+            height=int(params["height"]),
+            seed=int(seed),
+            model_id=model_entry.cloud_model_id,
+            negative_prompt=(params.get("negative_prompt") or "").strip() or None,
+        )
+        print(
+            f"[gen] cloud {model_entry.cloud_provider} model={model_entry.cloud_model_id} "
+            f"{req.width}x{req.height} seed={seed}",
+            flush=True,
+        )
+        image_bytes = provider.generate(req, config)
+
+        # Normalise to PNG at output_path. Pillow is present in the generation
+        # env; if it's somehow absent (cloud-only, no mflux install) or the
+        # bytes aren't decodable, fall back to writing them raw — browsers
+        # content-sniff the served file either way.
+        try:
+            import io
+            from PIL import Image  # type: ignore
+            Image.open(io.BytesIO(image_bytes)).save(str(output_path), format="PNG")
+        except Exception:
+            output_path.write_bytes(image_bytes)
+
+        job.current_step = 1
 
     def _generate_flux2_klein(self, job: GenerationJob, output_path: Path) -> None:
         """
@@ -798,16 +1033,16 @@ class GenerationManager:
 
     def _generate_flux1(self, job: GenerationJob, model_entry, output_path: Path) -> None:
         """
-        Run mflux's FLUX.1 pipeline (handles BOTH schnell and dev — mflux ships
-        one Flux1 class, the variant is selected via model_config). Covers:
+        Run mflux's FLUX.1 pipeline (handles schnell, dev, AND the Krea finetune —
+        mflux ships one Flux1 class, the variant is selected via model_config).
+        Covers:
         - black-forest-labs/FLUX.1-schnell (full)
-        - madroid/flux.1-schnell-mflux-4bit (MLX quant)
         - black-forest-labs/FLUX.1-dev (full, gated)
-        - madroid/flux.1-dev-mflux-4bit (MLX quant)
+        - black-forest-labs/FLUX.1-Krea-dev (photorealism finetune, gated)
 
         Defaults differ by variant:
         - schnell — distilled, 1-4 steps, guidance fixed at 0.0
-        - dev     — full guidance model, 20-30 steps, guidance ~3.5
+        - dev/krea — full guidance model, 20-30 steps, guidance ~3.5
         """
         from mflux.models.flux.variants.txt2img.flux import Flux1  # type: ignore
         from mflux.models.common.config.model_config import ModelConfig  # type: ignore
@@ -817,10 +1052,14 @@ class GenerationManager:
         family = model_entry.family
 
         # Pick the right ModelConfig for the family — mflux uses this to route
-        # weight loading + scheduler selection internally.
-        model_config = (
-            ModelConfig.schnell() if family == "flux1-schnell" else ModelConfig.dev()
-        )
+        # weight loading + scheduler selection internally. Krea is a dev-class
+        # finetune, so it shares dev's guidance/step defaults below.
+        if family == "flux1-schnell":
+            model_config = ModelConfig.schnell()
+        elif family == "flux1-krea":
+            model_config = ModelConfig.krea_dev()
+        else:
+            model_config = ModelConfig.dev()
 
         # Schnell is distilled and ignores guidance/negative; dev respects both.
         # Pick sane per-variant defaults but let the user override.

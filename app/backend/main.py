@@ -115,6 +115,10 @@ class RevealBody(BaseModel):
 
 class SettingsBody(BaseModel):
     hf_token: Optional[str] = None   # pass "" to clear; omit field to leave unchanged
+    # Cloud-provider credentials (v1.6.0). Same convention: "" clears, omit = unchanged.
+    cloudflare_account_id: Optional[str] = None
+    cloudflare_api_token: Optional[str] = None
+    together_api_key: Optional[str] = None
 
 
 class TokenTestBody(BaseModel):
@@ -176,9 +180,22 @@ def get_catalog() -> dict:
     models = []
     for m in catalog.CATALOG:
         d = catalog.serialize_model(m)
-        d["cache"] = cache.status_snapshot(m.repo)
-        active = manager.active_for_repo(m.repo)
-        d["active_download"] = active.serialize() if active else None
+        if m.is_cloud:
+            # Cloud models have no HF download. Report a synthetic "cached"
+            # state — the frontend gates readiness + the Generate dropdown on
+            # state == "cached", so this makes them ready with no download UI.
+            d["cache"] = {
+                "repo": m.repo,
+                "state": "cached",
+                "path": None,
+                "bytes_complete": 0,
+                "bytes_incomplete": 0,
+            }
+            d["active_download"] = None
+        else:
+            d["cache"] = cache.status_snapshot(m.repo)
+            active = manager.active_for_repo(m.repo)
+            d["active_download"] = active.serialize() if active else None
         models.append(d)
     return {"families": families, "models": models}
 
@@ -376,9 +393,14 @@ def get_settings_endpoint() -> dict:
 
 @app.post("/api/settings")
 def update_settings_endpoint(body: SettingsBody) -> dict:
-    """Update settings. Passing hf_token="" clears it."""
+    """Update settings. For any field, passing "" clears it; omitting leaves it
+    unchanged."""
     if body.hf_token is not None:
         app_settings.set_hf_token(body.hf_token)
+    for key in ("cloudflare_account_id", "cloudflare_api_token", "together_api_key"):
+        val = getattr(body, key)
+        if val is not None:
+            app_settings.set_value(key, val.strip())
     return app_settings.serialize_public()
 
 
@@ -490,21 +512,24 @@ def generation_diagnostics() -> dict:
 
 @app.post("/api/generate/txt2img")
 def start_txt2img(body: Txt2ImgBody) -> dict:
-    if not gen_manager.is_available():
-        raise HTTPException(
-            status_code=503,
-            detail="Generation engine not installed. Run the 'Install Generation' menu item.",
-        )
     if not body.prompt.strip():
         raise HTTPException(status_code=400, detail="prompt is required")
     model = catalog.get_model(body.repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {body.repo}")
-    if cache.cache_state(body.repo) != "cached":
-        raise HTTPException(
-            status_code=409,
-            detail=f"Model {body.repo} is not fully cached. Download it from the Models tab first.",
-        )
+    # Cloud models are an HTTP call — they need neither the local mflux engine
+    # nor a Hugging Face download, so skip both gates for them.
+    if not model.is_cloud:
+        if not gen_manager.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Generation engine not installed. Run the 'Install Generation' menu item.",
+            )
+        if cache.cache_state(body.repo) != "cached":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Model {body.repo} is not fully cached. Download it from the Models tab first.",
+            )
 
     # Resolve LoRA names to absolute paths so the worker doesn't need to redo it.
     lora_paths: list[str] = []

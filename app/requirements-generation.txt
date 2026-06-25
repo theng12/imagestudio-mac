@@ -7,3 +7,14 @@ mflux>=0.10
 # We list a few extras directly so version conflicts are explicit:
 pillow>=10.0
 numpy>=1.26
+
+# ── Diffusers engine (v1.9.0) — second local backend (PyTorch/MPS) ──────────
+# For models mflux has no class for (SD3.5, Sana, Ideogram 4, …). On macOS
+# arm64 the default torch wheel ships with MPS (Metal) support. protobuf +
+# sentencepiece are needed by SD3-class T5 tokenizers (sentencepiece already
+# comes via mflux; listed here for clarity).
+torch>=2.2
+diffusers>=0.31
+accelerate>=0.34
+protobuf>=4.0
+sentencepiece>=0.2

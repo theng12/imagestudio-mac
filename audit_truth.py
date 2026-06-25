@@ -85,17 +85,27 @@ def _branch_raises_not_implemented(stmts: list[ast.stmt]) -> bool:
 # ─── catalog audit ─────────────────────────────────────────────────────────
 
 def parse_catalog_families(catalog_path: Path) -> set[str]:
-    """Return the set of family ids used by any ModelEntry(...) call."""
+    """Return the set of family ids used by any mflux ModelEntry(...) call.
+
+    Skipped (they don't go through mflux dispatch, so counting their families
+    here would wrongly flag them as orphans):
+      - Cloud entries (provider="cloud") → route through app/backend/providers.
+      - Diffusers entries (engine="diffusers") → route through the diffusers
+        worker on PyTorch/MPS, not mflux family dispatch.
+    """
     tree = ast.parse(catalog_path.read_text())
     families: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             if node.func.id == "ModelEntry":
-                for kw in node.keywords:
-                    if kw.arg == "family":
-                        s = _string_literal(kw.value)
-                        if s:
-                            families.add(s)
+                kwargs = {kw.arg: kw.value for kw in node.keywords}
+                if _string_literal(kwargs.get("provider")) == "cloud":
+                    continue
+                if _string_literal(kwargs.get("engine")) == "diffusers":
+                    continue
+                fam = _string_literal(kwargs.get("family"))
+                if fam:
+                    families.add(fam)
     return families
 
 

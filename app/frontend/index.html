@@ -669,17 +669,76 @@
       <!-- ─── Your-Mac banner (Tier 1 hardware fit) ─── -->
       <!-- Reads /api/system once on init. Shows chip + RAM so the per-card
            fit chips have a clear "compared to what?" anchor. -->
-      <div class="your-mac-banner" x-show="system.unified_memory_gb" x-cloak>
-        <span class="your-mac-icon">🖥</span>
-        <span>
-          Detected:
-          <strong x-text="system.chip || 'Apple Silicon'"></strong>
-          ·
-          <strong><span x-text="system.unified_memory_gb"></span> GB</strong> unified memory
-        </span>
-        <span class="muted small">
-          — fit chips below compare each model's memory floor against your hardware
-        </span>
+      <!-- ─── Hardware planner: RAM slider + live fit ─── -->
+      <div class="ram-planner" x-cloak>
+        <div class="ram-planner-head">
+          <span class="your-mac-icon">🖥</span>
+          <span x-show="system.unified_memory_gb">
+            Detected:
+            <strong x-text="system.chip || 'Apple Silicon'"></strong>
+            · <strong><span x-text="system.unified_memory_gb"></span> GB</strong> unified memory
+          </span>
+          <span x-show="!system.unified_memory_gb" class="muted">
+            Couldn't detect your Mac's RAM — set a budget below to score model fit.
+          </span>
+          <span class="ram-planner-spacer"></span>
+          <span class="ram-budget-pill" :class="{ preview: !ramIsDetected }">
+            Planning for <strong><span x-text="ramGb"></span> GB</strong>
+            <span class="muted small" x-show="!ramIsDetected">· preview</span>
+            <span class="muted small" x-show="ramIsDetected && system.unified_memory_gb">· your Mac</span>
+          </span>
+        </div>
+
+        <div class="ram-slider-row">
+          <input class="ram-slider" type="range" min="8" max="512" step="1"
+                 :value="ramGb" @input="setRam($event.target.value)"
+                 aria-label="Unified memory budget in GB">
+          <div class="ram-entry">
+            <input class="ram-num" type="number" min="1" max="1024" step="1"
+                   :value="ramGb" @input="setRam($event.target.value)"
+                   aria-label="Unified memory budget (number)">
+            <span class="muted small">GB</span>
+          </div>
+          <button class="btn ghost small ram-reset" x-show="system.unified_memory_gb && !ramIsDetected"
+                  @click="resetRamToDetected()" title="Snap back to your Mac's detected RAM">
+            ↩ My Mac (<span x-text="system.unified_memory_gb"></span> GB)
+          </button>
+        </div>
+
+        <div class="ram-tiers">
+          <template x-for="t in ramTiers" :key="t">
+            <button class="chip ram-tier" :class="{ active: ramGb === t }"
+                    @click="setRam(t)" x-text="t + ' GB'"></button>
+          </template>
+        </div>
+
+        <p class="muted small ram-planner-note">
+          Drag, type, or tap a tier to preview a machine — every fit chip and the picks below re-score instantly.
+        </p>
+      </div>
+
+      <!-- ─── ✨ Best for your RAM — live, per-lane recommendations ─── -->
+      <div class="best-picks" x-show="bestPicks.length" x-cloak>
+        <div class="best-picks-head">
+          <h2>✨ Best for <span x-text="ramGb"></span> GB</h2>
+          <span class="muted small">The model in each lane that best fits your budget — updates as you move the slider. Click a card to find it below.</span>
+        </div>
+        <div class="best-picks-grid">
+          <template x-for="p in bestPicks" :key="p.id">
+            <article class="best-pick-card"
+                     @click="modelFilters.search = p.model.repo; modelFilters.fitLevel = 'all'"
+                     :title="'Find ' + p.model.label + ' in the list below'">
+              <div class="best-pick-lane"><span x-text="p.icon"></span> <span x-text="p.label"></span></div>
+              <div class="best-pick-model" x-text="p.model.label"></div>
+              <div class="best-pick-meta">
+                <span class="chip" :class="cacheChipClass(p.model.cache?.state || 'absent')" x-text="cacheChipLabel(p.model.cache?.state || 'absent')"></span>
+                <span class="chip" :class="'fit-' + fitFor(p.model.min_unified_memory_gb).state"
+                      x-text="fitChipLabel(fitFor(p.model.min_unified_memory_gb))"></span>
+                <span class="muted small" x-text="formatGb(p.model.size_gb) + ' · ≥' + p.model.min_unified_memory_gb + ' GB'"></span>
+              </div>
+            </article>
+          </template>
+        </div>
       </div>
 
       <details class="primer">
@@ -796,7 +855,20 @@
         </template>
       </div>
 
-      <!-- ─── Hardware + format filters (v1.1.2) ─── -->
+      <!-- ─── Hardware + format filters (v1.1.2 / RAM planner) ─── -->
+      <!-- Segmented RAM-fit filter — scored live against the RAM slider above.
+           Mirrors the Chat Studio model-tab control for a consistent look. -->
+      <div class="library-toolbar-row filter-chips-row">
+        <span class="filter-label">RAM fit</span>
+        <div class="seg fit-seg">
+          <button :class="{active: modelFilters.fitLevel==='all'}"   @click="modelFilters.fitLevel='all'">All</button>
+          <button :class="{active: modelFilters.fitLevel==='ok'}"    @click="modelFilters.fitLevel='ok'"    title="Comfortable headroom at your RAM budget">✓ Fits</button>
+          <button :class="{active: modelFilters.fitLevel==='tight'}" @click="modelFilters.fitLevel='tight'" title="Meets the floor but no headroom — close other apps">⚠ Tight</button>
+          <button :class="{active: modelFilters.fitLevel==='over'}"  @click="modelFilters.fitLevel='over'"  title="Exceeds your RAM budget — would swap or fail to load">✗ Over</button>
+        </div>
+        <span class="muted small">at <strong x-text="ramGb + ' GB'"></strong></span>
+      </div>
+
       <div class="library-toolbar-row filter-chips-row">
         <span class="filter-label">Quick</span>
         <button class="chip filter-chip filter-chip-mlx"
@@ -804,17 +876,6 @@
                 @click="toggleMlxFilter()"
                 title="Show only models pre-quantized for Apple Silicon's MLX framework — fastest loads, smallest footprint on M-series Macs.">
           🍎 Apple Silicon (MLX) only
-        </button>
-        <button class="chip filter-chip filter-chip-fit"
-                :class="{active: modelFilters.fitsMyMac}"
-                :disabled="!system.unified_memory_gb"
-                @click="toggleFitsMyMacFilter()"
-                :title="system.unified_memory_gb
-                          ? ('Hide models that exceed your ' + system.unified_memory_gb + ' GB unified memory. \"Tight\" models still show.')
-                          : 'Hardware detection unavailable.'">
-          🖥 Fits my Mac
-          <span class="muted small" x-show="system.unified_memory_gb"
-                x-text="'(' + system.unified_memory_gb + ' GB)'"></span>
         </button>
       </div>
     </section>
@@ -875,12 +936,12 @@
                     title="Hugging Face requires you to accept a license and provide a personal access token before downloading this repo.">gated</span>
                   <span class="chip neutral" x-show="m.apple_optimized"
                     title="Pre-quantized for Apple Silicon's MLX framework. Loads fast and uses unified memory efficiently on M-series chips.">MLX</span>
-                  <!-- Fit chip — green / yellow / red against detected RAM -->
+                  <!-- Fit chip — scored LIVE against the RAM slider. -->
                   <span class="chip"
-                        x-show="m.fit && m.fit.state"
-                        :class="'fit-' + (m.fit?.state || 'unknown')"
-                        :title="m.fit?.hint"
-                        x-text="fitChipLabel(m.fit)"></span>
+                        x-show="m.min_unified_memory_gb"
+                        :class="'fit-' + fitFor(m.min_unified_memory_gb).state"
+                        :title="fitFor(m.min_unified_memory_gb).hint"
+                        x-text="fitChipLabel(fitFor(m.min_unified_memory_gb))"></span>
                 </h3>
                 <p class="repo"><code x-text="m.repo"></code></p>
                 <p class="size-line">
@@ -1308,6 +1369,87 @@
 
       <p class="status-text" x-show="settings.message" :class="settings.messageKind"
          x-text="settings.message" x-cloak></p>
+    </section>
+
+    <section class="card">
+      <h2>Cloud provider keys</h2>
+      <p class="muted">
+        Optional API keys for the <strong>cloud</strong> models in the catalog.
+        Stored locally in <code>app/backend/settings.json</code> (gitignored) and
+        sent only to each provider's API when you generate. The free
+        <strong>Pollinations</strong> cloud model needs no key.
+      </p>
+
+      <h3 style="margin-bottom:4px;">Cloudflare Workers AI</h3>
+      <p class="muted">
+        Status:
+        <strong x-show="cloudKeys.cloudflare_account_id_set && cloudKeys.cloudflare_api_token_set" class="ok-text">✓ Saved</strong>
+        <strong x-show="!(cloudKeys.cloudflare_account_id_set && cloudKeys.cloudflare_api_token_set)" class="warn-text">Not set</strong>
+        <span x-show="cloudKeys.cloudflare_account_id_set" class="muted">
+          (account <code x-text="cloudKeys.cloudflare_account_id_masked"></code>)
+        </span>
+      </p>
+      <details class="control-help">
+        <summary>How to get these (free, ~1 min)</summary>
+        <ol class="primer-body" style="padding-left:18px">
+          <li>Sign up at <a href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener" class="link-accent">dash.cloudflare.com</a> (free, no card).</li>
+          <li>Your <strong>Account ID</strong> shows on the Workers &amp; Pages overview page (and in the dashboard URL).</li>
+          <li>Create an <strong>API token</strong> with the <code>Workers AI</code> permission at <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener" class="link-accent">profile → API Tokens</a>.</li>
+          <li>Free tier: 10,000 neurons/day.</li>
+        </ol>
+      </details>
+      <div class="form-row" style="margin-top:10px;">
+        <input x-model="cloudKeys.cfAccount" placeholder="Cloudflare Account ID"
+               autocomplete="off" spellcheck="false"
+               style="flex:1 1 280px; font-family:'JetBrains Mono', monospace; font-size:13px;" />
+      </div>
+      <div class="form-row" style="margin-top:0;">
+        <input :type="cloudKeys.showCfToken ? 'text' : 'password'"
+               x-model="cloudKeys.cfToken" placeholder="Cloudflare API token"
+               autocomplete="off" spellcheck="false"
+               style="flex:1 1 280px; font-family:'JetBrains Mono', monospace; font-size:13px;" />
+        <button class="ghost small" @click="cloudKeys.showCfToken = !cloudKeys.showCfToken"
+                x-text="cloudKeys.showCfToken ? '🙈 Hide' : '👁 Show'"></button>
+      </div>
+
+      <h3 style="margin:16px 0 4px;">Together AI</h3>
+      <p class="muted">
+        Status:
+        <strong x-show="cloudKeys.together_api_key_set" class="ok-text">✓ Saved</strong>
+        <strong x-show="!cloudKeys.together_api_key_set" class="warn-text">Not set</strong>
+        <span x-show="cloudKeys.together_api_key_set" class="muted">
+          (<code x-text="cloudKeys.together_api_key_masked"></code>)
+        </span>
+      </p>
+      <details class="control-help">
+        <summary>How to get this (free)</summary>
+        <ol class="primer-body" style="padding-left:18px">
+          <li>Sign up at <a href="https://api.together.ai/" target="_blank" rel="noopener" class="link-accent">api.together.ai</a> (free; new accounts get trial credits).</li>
+          <li>Copy your API key from <a href="https://api.together.ai/settings/api-keys" target="_blank" rel="noopener" class="link-accent">Settings → API Keys</a>.</li>
+          <li>The <code>FLUX.1-schnell-Free</code> endpoint is free to use.</li>
+        </ol>
+      </details>
+      <div class="form-row" style="margin-top:10px;">
+        <input :type="cloudKeys.showTogether ? 'text' : 'password'"
+               x-model="cloudKeys.together" placeholder="Together API key"
+               autocomplete="off" spellcheck="false"
+               style="flex:1 1 280px; font-family:'JetBrains Mono', monospace; font-size:13px;" />
+        <button class="ghost small" @click="cloudKeys.showTogether = !cloudKeys.showTogether"
+                x-text="cloudKeys.showTogether ? '🙈 Hide' : '👁 Show'"></button>
+      </div>
+
+      <div class="form-row" style="margin-top:14px;">
+        <button class="primary" @click="saveCloudKeys()" :disabled="cloudKeys.busy">
+          <span x-show="!cloudKeys.busy">Save cloud keys</span>
+          <span x-show="cloudKeys.busy">Saving…</span>
+        </button>
+        <button class="ghost danger" @click="clearCloudKeys()" :disabled="cloudKeys.busy"
+                title="Remove all saved cloud provider keys.">
+          Clear all
+        </button>
+      </div>
+      <p class="status-text" x-show="cloudKeys.message" :class="cloudKeys.messageKind"
+         x-text="cloudKeys.message" x-cloak></p>
     </section>
 
     <section class="card">

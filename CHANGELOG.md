@@ -10,6 +10,142 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.9.0] — 2026-06-26
+
+### Added — second local engine: diffusers (PyTorch/MPS) + Stable Diffusion 3.5
+
+The big one: a second local inference engine alongside mflux/MLX, so the app can
+run models mflux has no class for (SD3.5, Sana, Ideogram 4, …).
+
+- **`engine` field on every model** — `"mflux"` (default) or `"diffusers"`. Cloud
+  models are unaffected (`provider="cloud"` short-circuits before engine dispatch).
+- **Diffusers worker** (`_generate_diffusers`) — loads a `DiffusionPipeline` from
+  the app's HF cache (same `HF_HOME` as downloads), runs on Apple **MPS** (bf16),
+  and caches one pipeline in-process so back-to-back generations skip the
+  multi-GB reload. Routed by `engine` in `_dispatch_txt2img`, before mflux family
+  dispatch.
+- **Phase A model: Stable Diffusion 3.5 Large** (`stabilityai/stable-diffusion-3.5-large`,
+  `engine="diffusers"`, txt2img). Gated — needs HF token + license. Behaves like
+  any local model in the UI (download → appears in the txt2img dropdown); **no
+  frontend changes needed**.
+- **Install** — `requirements-generation.txt` gains `torch`, `diffusers`,
+  `accelerate`, `protobuf`. Diagnostics tracks the diffusers engine
+  (`_DIFFUSERS_FAMILIES`); `audit_truth.py` excludes diffusers entries (it audits
+  mflux wiring only).
+
+### Notes
+- MINOR — new engine. **Re-run "Install Generation"** to pick up torch/diffusers,
+  then download SD3.5 (accept its HF license + set your token first). Verified:
+  compile, truth audit (clean), and — on Apple Silicon — the diffusers import
+  path, MPS/bf16 availability, and SD3.5 pipeline resolution. A full end-to-end
+  generation needs the gated ~20 GB SD3.5 download, so it's verified up to model
+  load.
+- **Phase B (next):** Ideogram 4 (custom `Ideogram4Pipeline`, `trust_remote_code`)
+  + more diffusers models (Sana, HiDream, PixArt, …).
+
+---
+
+## [1.8.0] — 2026-06-26
+
+### Added — RAM planner: interactive memory slider + live "Best for your RAM" picks (Models tab)
+
+The Models tab gained a **hardware planner** so you can size models to a machine you don't own yet — set the unified-memory budget and every fit chip re-scores instantly.
+
+- **RAM slider + numeric entry + tier presets** (8 / 16 / 24 / 32 / 48 / 64 / 128 / 256 / 512 GB). Defaults to your detected RAM; drag/type to *preview* a different Mac (e.g. plan an M3 Ultra 512 GB before buying it). A `↩ My Mac` button snaps back to detected. The chosen budget persists across reloads.
+- **Live hardware fit** — per-card fit chips (✓ fits / ⚠ tight / ✗ over budget) are scored **client-side** against the slider value via `fitFor()`/`effectiveRam`, with no server round-trip.
+- **✨ Best for your RAM** — surfaces the best model per lane that still fits the budget: **best quality** (heaviest), **fastest/lightest**, and **best for editing**. At 8 GB it favours the light SD-class models; at 64 GB+ it upgrades to the large FLUX-class models.
+- **Segmented "RAM fit" filter** (All / ✓ Fits / ⚠ Tight / ✗ Over), mirroring the Chat Studio model-tab control for a consistent look across the suite. The old binary "Fits my Mac" chip is folded into this.
+
+**Frontend-only — no new Python dependencies. A plain _Update_ from the Pinokio sidebar is enough (no re-install / Install Generation needed).**
+
+---
+
+## [1.7.0] — 2026-06-26
+
+### Added — SeedVR2 upscaler (local)
+
+- **SeedVR2 7B** (`numz/SeedVR2_comfyUI`) — a diffusion image **upscaler /
+  restorer**, wired via mflux's `SeedVR2` class. It lives in the
+  **Image-to-Image** tab: attach an image and generate, and it reconstructs a
+  higher-resolution version (fixed ~2× for now). Self-contained (one repo, no
+  base model). NOT txt2img — the prompt / guidance / steps / strength controls
+  are ignored. Heavy 7B model; best on a high-memory Mac (M3 Ultra ideal).
+
+### Deferred — FLUX.1 Redux
+- Redux was scoped as a "quick win" alongside SeedVR2, but mflux's Redux loads
+  the FLUX.1-dev **base** *plus* the Redux **adapter** repo (two downloads),
+  which the current single-repo download/cache flow doesn't cover. Deferred
+  until two-repo handling is added rather than ship a model that fails at
+  generation time.
+
+### Notes
+- MINOR — new model family, **no new Python deps** (SeedVR2 ships in the
+  installed mflux 0.17.5). Plain **Update**. Truth audit passes clean. Wiring
+  verified (catalog + dispatch + mflux class/config imports); a full end-to-end
+  run requires downloading the SeedVR2 repo first.
+
+---
+
+## [1.6.0] — 2026-06-26
+
+### Added — two more cloud providers: Cloudflare Workers AI + Together AI
+
+Builds on the v1.5.0 cloud-provider layer with two **keyed** free providers:
+
+- **Cloudflare Workers AI** (`cloudflare/flux-1-schnell`) — FLUX.1 schnell on
+  Cloudflare's edge. Free tier (10k neurons/day). Needs a free Account ID + API
+  token. Note: the Workers AI schnell endpoint outputs a fixed size (ignores
+  width/height).
+- **Together AI** (`together/flux-1-schnell-free`) — the FLUX.1 [schnell] Free
+  endpoint. Free with a (free) Together API key; honors width/height (so the
+  aspect-ratio presets apply), capped at 4 steps.
+
+Supporting changes:
+- **Provider credentials** — `CloudProvider.generate()` now takes a `config`
+  dict (resolved from settings); providers declare `required_config`. New
+  settings keys `cloudflare_account_id`, `cloudflare_api_token`,
+  `together_api_key`, surfaced **masked** via `/api/settings` (raw values never
+  returned).
+- **Settings UI** — a new "Cloud provider keys" card on the Settings tab with
+  show/hide inputs, per-provider "how to get a key" help, save + clear-all.
+- Providers remain **stdlib-only** (urllib + base64), so the cloud path still
+  works without the heavy generation install.
+
+### Notes
+- MINOR — new feature, **no new Python deps**. Plain **Update** is enough. The
+  two new models need their key set in Settings before they'll generate
+  (Pollinations from v1.5.0 still needs no key). Truth audit passes clean.
+
+---
+
+## [1.5.0] — 2026-06-26
+
+### Added — FLUX.1 Krea dev (local) + Pollinations cloud generation
+
+- **FLUX.1 Krea dev** — new local model family (`flux1-krea`). BFL × Krea's
+  photorealism-tuned FLUX.1 dev; less "AI-looking" than stock FLUX.1 dev
+  (more natural skin/lighting/texture). Rides the existing mflux `Flux1` class
+  via `ModelConfig.krea_dev()`, so it reuses the `_generate_flux1` worker —
+  txt2img + img2img, gated (HF token + license), ~24 GB.
+- **Cloud providers** — new `provider="cloud"` model class routed through a new
+  `app/backend/providers/` registry instead of mflux. First provider:
+  **Pollinations FLUX** (`pollinations/flux`) — free, no API key, no download,
+  no local GPU. Works on any Mac (even without the heavy generation install,
+  since the cloud path is a stdlib HTTP call). Prompts are sent to
+  Pollinations' servers; output is best-effort and rate-limited.
+  - Cloud models report a synthetic `cached` state so the existing UI shows
+    them ready with no download button; `start_txt2img` skips the mflux/cache
+    gates for them. Cloud entries are excluded from `audit_truth.py` (it audits
+    mflux wiring only).
+
+### Notes
+- MINOR — new model family + new feature. **No new Python deps** (Krea uses the
+  already-installed mflux 0.17.5; the cloud provider is stdlib-only), so a plain
+  **Update** is enough — no need to re-run Install Generation. Truth audit
+  passes clean (no drift).
+
+---
+
 ## [1.4.2] — 2026-06-06
 
 ### Added — auto-restart on Update + "Repair · take over port" button
