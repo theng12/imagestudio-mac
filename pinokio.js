@@ -18,6 +18,7 @@ module.exports = {
       install_generation: info.running("install_generation.js"),
       start: info.running("start.js"),
       update: info.running("update.js"),
+      updateRestart: info.running("update_and_restart.js"),
       reset: info.running("reset.js")
     }
 
@@ -43,6 +44,14 @@ module.exports = {
         icon: "fa-solid fa-rotate",
         text: "Updating",
         href: "update.js"
+      }]
+    }
+    if (running.updateRestart) {
+      return [{
+        default: true,
+        icon: "fa-solid fa-rotate",
+        text: "Updating & Restarting",
+        href: "update_and_restart.js"
       }]
     }
     if (running.reset) {
@@ -83,7 +92,7 @@ module.exports = {
         { icon: "fa-solid fa-file-image", text: "Outputs", href: "app/output?fs=true" },
         { icon: "fa-solid fa-folder-tree", text: "HF Cache", href: "cache/HF_HOME/hub?fs=true" },
         { icon: "fa-regular fa-circle-xmark", text: "Uninstall Startup Service", href: "unservice.js" },
-        { icon: "fa-solid fa-rotate", text: "Update", href: "update.js" }
+        { icon: "fa-solid fa-rotate", text: "Update & Restart", href: "update_and_restart.js" }
       ]
     }
 
@@ -138,6 +147,11 @@ module.exports = {
             icon: "fa-solid fa-terminal",
             text: "Terminal",
             href: "start.js"
+          },
+          {
+            icon: "fa-solid fa-rotate",
+            text: "Update & Restart",
+            href: "update_and_restart.js"
           },
           {
             icon: "fa-solid fa-folder-tree",
