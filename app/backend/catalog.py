@@ -162,6 +162,21 @@ FAMILIES: dict[str, Family] = {
         ),
     ),
     # ── Diffusers-engine families (v1.9.0) — PyTorch/MPS, NOT mflux ──────────
+    "sana": Family(
+        id="sana",
+        label="Sana (NVlabs)",
+        summary=(
+            "NVIDIA's Sana — an efficient linear-attention DiT that's fast and "
+            "ungated (Apache-licensed). Runs via the diffusers engine on "
+            "PyTorch/MPS. Lighter + quicker than SD3.5, and needs no HF license, "
+            "so it's the easiest diffusers model to try."
+        ),
+        how_to_use=(
+            "Standard txt2img prompts. ~18-20 steps, guidance ~4.5. Native 1024px. "
+            "Ungated — no HF token or license needed. Runs on MPS; the first "
+            "generation loads the pipeline, later ones reuse it."
+        ),
+    ),
     "sd35": Family(
         id="sd35",
         label="Stable Diffusion 3.5",
@@ -702,10 +717,36 @@ CATALOG: tuple[ModelEntry, ...] = (
     ),
 
     # ──────────── Diffusers engine (PyTorch/MPS) — new in v1.9.0 ────────────
-    # Routed via _generate_diffusers (HuggingFace diffusers), NOT mflux. Phase A
-    # proof model: Stable Diffusion 3.5 Large. engine="diffusers" entries are
-    # excluded from audit_truth.py (it audits mflux wiring only). Needs the
-    # diffusers/torch deps from requirements-generation.txt (Install Generation).
+    # Routed via _generate_diffusers (HuggingFace diffusers), NOT mflux.
+    # engine="diffusers" entries are excluded from audit_truth.py (it audits
+    # mflux wiring only). Needs the diffusers/torch deps from
+    # requirements-generation.txt (Install Generation).
+    #
+    # Sana (v1.10.0) — ungated + MPS-friendly, so the easiest diffusers model to
+    # actually run on a Mac. (Ideogram 4 was evaluated here but CANNOT run on
+    # Apple MPS: its weights are fp8/nf4 — fp8 isn't a supported MPS dtype and
+    # nf4 needs CUDA-only bitsandbytes. Revisit when mflux ships native MLX
+    # Ideogram support.)
+    ModelEntry(
+        repo="Efficient-Large-Model/Sana_1600M_1024px_diffusers",
+        label="Sana 1600M (1024px)",
+        family="sana",
+        size_gb=7.0,
+        gated=False,
+        min_unified_memory_gb=16,
+        recommended_hardware="Apple Silicon 16 GB+. Efficient linear-attention DiT — lighter/faster than SD3.5 on MPS.",
+        capabilities=("txt2img",),
+        engine="diffusers",
+        best_for="NVIDIA's Sana via the diffusers engine — fast, efficient, ungated (no HF license needed), 1024px native. The easiest diffusers model to try on a Mac and a good second proof that the engine generalizes beyond SD3.5.",
+        use_cases=(
+            ("good",  "Ungated — no HF token / license gate, downloads immediately"),
+            ("good",  "Fast, memory-efficient diffusers txt2img on MPS"),
+            ("good",  "1024px native; good general-purpose quality"),
+            ("weak",  "PyTorch/MPS is still slower than the mflux/MLX models"),
+            ("avoid", "Maximum fidelity — SD3.5 / large FLUX models edge it on detail"),
+        ),
+    ),
+
     ModelEntry(
         repo="stabilityai/stable-diffusion-3.5-large",
         label="Stable Diffusion 3.5 Large",

@@ -15,10 +15,12 @@ and MLX.
   Image-to-Image tab).
 - **Two local engines.** Most models run on **mflux/MLX** (Apple-native, fast).
   A second **diffusers** engine (PyTorch/MPS) runs models mflux has no class for
-  — starting with **Stable Diffusion 3.5 Large** — and is the path to the wider
-  diffusers ecosystem (Ideogram 4, Sana, …). Each model declares its `engine`;
-  diffusers models behave like any other local model in the UI but need the
-  `torch`/`diffusers` deps (run **Install Generation**).
+  — **Stable Diffusion 3.5 Large** (gated) and **Sana 1600M** (ungated, the
+  easiest to try). Each model declares its `engine`; diffusers models behave like
+  any other local model in the UI but need the `torch`/`diffusers` deps (run
+  **Install Generation**). Note: **Ideogram 4 can't run on Apple MPS** — its
+  weights are fp8/nf4 (fp8 is an unsupported MPS dtype; nf4 needs CUDA-only
+  bitsandbytes) — so it's parked until mflux ships native MLX support.
 - **Cloud option (free):** alongside the local MLX models, the catalog includes
   **Pollinations FLUX** — a `provider="cloud"` entry that generates on
   Pollinations' free hosted API. No API key, no download, no local GPU; it runs

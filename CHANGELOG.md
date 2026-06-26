@@ -10,6 +10,37 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.10.0] — 2026-06-26
+
+### Added — Sana (diffusers engine) + Ideogram 4 feasibility verdict
+
+- **Sana 1600M** (`Efficient-Large-Model/Sana_1600M_1024px_diffusers`,
+  `engine="diffusers"`, txt2img) — NVIDIA's efficient linear-attention DiT.
+  **Ungated** (Apache), MPS-friendly, lighter/faster than SD3.5 — the easiest
+  diffusers model to actually run on a Mac, and a second proof the engine
+  generalizes beyond SD3.5. Verified: diffusers `SanaPipeline` resolves, repo
+  exists + ungated, catalog/diagnostics wiring clean.
+
+### Not added — Ideogram 4 (cannot run on Apple MPS)
+
+Investigated for this engine and **ruled out on Apple Silicon**, with evidence:
+- All Ideogram 4 weights are quantized — **nf4** (needs CUDA-only `bitsandbytes`,
+  no macOS build) or **fp8**.
+- Probed locally: `torch.float8_e4m3fn` is **not a supported MPS dtype** in torch
+  2.12 (can't even move fp8 weights to MPS), so the fp8 path is dead too.
+- The only known-working Mac path is an **unreleased mflux branch** (MLX-forge +
+  `mflux-generate-ideogram4` with `MLXBits/ideogram-4-mlx-q8`), which we won't
+  install over the stable mflux 0.17.5 (risks the working FLUX/Qwen/FIBO/Z-Image
+  /SeedVR2 models). Revisit when mflux ships **native MLX Ideogram support** —
+  then it's a clean mflux catalog add.
+
+### Notes
+- MINOR — new model family on the existing diffusers engine. **No new Python
+  deps** (torch/diffusers landed in 1.9.0). Sana is ungated, so it downloads
+  without an HF token/license. Truth audit passes clean.
+
+---
+
 ## [1.9.0] — 2026-06-26
 
 ### Added — second local engine: diffusers (PyTorch/MPS) + Stable Diffusion 3.5
