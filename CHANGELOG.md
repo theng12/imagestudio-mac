@@ -10,6 +10,32 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.11.0] — 2026-06-26
+
+### Added — three more diffusers models (broadening the engine)
+
+All ungated, MPS-friendly, standard diffusers pipelines (verified the pipeline
+classes resolve + repos exist/ungated):
+
+- **PixArt-Σ XL 1024** (`PixArt-alpha/PixArt-Sigma-XL-2-1024-MS`,
+  `PixArtSigmaPipeline`) — lightest diffusers model, small download, low memory.
+- **Lumina-Image 2.0** (`Alpha-VLLM/Lumina-Image-2.0`, `Lumina2Pipeline`) — ~2B
+  flow DiT with a Gemma text encoder; strong multilingual prompts.
+- **AuraFlow v0.3** (`fal/AuraFlow-v0.3`, `AuraFlowPipeline`) — ~6.8B open flow
+  model; higher capacity, heavier.
+
+Each sets an explicit `diffusers_pipeline` class (more robust than relying on
+`AutoPipeline` auto-resolution). HiDream-I1 was evaluated but held back (17B +
+Llama text encoder = higher MPS risk; wants a dedicated test first).
+
+### Notes
+- MINOR — new model families on the existing diffusers engine. **No new Python
+  deps**. All ungated (no HF token/license). Truth audit passes clean. Wiring +
+  diagnostics verified; a real end-to-end MPS generation test (PixArt-Σ) was run
+  separately to validate the shared `_generate_diffusers` worker.
+
+---
+
 ## [1.10.0] — 2026-06-26
 
 ### Added — Sana (diffusers engine) + Ideogram 4 feasibility verdict

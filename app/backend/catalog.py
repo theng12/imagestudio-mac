@@ -162,6 +162,45 @@ FAMILIES: dict[str, Family] = {
         ),
     ),
     # ── Diffusers-engine families (v1.9.0) — PyTorch/MPS, NOT mflux ──────────
+    "pixart-sigma": Family(
+        id="pixart-sigma",
+        label="PixArt-Σ (Sigma)",
+        summary=(
+            "PixArt-Sigma — a lightweight, efficient DiT text-to-image model. "
+            "Small + fast on the diffusers engine (PyTorch/MPS), ungated. The "
+            "lowest-footprint diffusers option here."
+        ),
+        how_to_use=(
+            "Standard txt2img prompts. ~20 steps, guidance ~4.5, 1024px. Ungated "
+            "— no HF token needed. The lightest diffusers model in the catalog."
+        ),
+    ),
+    "lumina2": Family(
+        id="lumina2",
+        label="Lumina-Image 2.0",
+        summary=(
+            "Alpha-VLLM's Lumina-Image 2.0 — a ~2B flow-based DiT with a Gemma "
+            "text encoder. Mid-weight, strong multilingual prompt comprehension, "
+            "ungated. Runs via the diffusers engine on MPS."
+        ),
+        how_to_use=(
+            "Standard txt2img prompts. ~30-50 steps, guidance ~4, 1024px. Ungated "
+            "— no HF token needed."
+        ),
+    ),
+    "auraflow": Family(
+        id="auraflow",
+        label="AuraFlow",
+        summary=(
+            "AuraFlow v0.3 — fal.ai's open flow-based text-to-image model (~6.8B). "
+            "Larger/heavier than PixArt, Sana, or Lumina but strong prompt "
+            "following. Runs via the diffusers engine on MPS; ungated."
+        ),
+        how_to_use=(
+            "Standard txt2img prompts. Flow models like ~50 steps; guidance ~3.5, "
+            "1024px+. Ungated. Heavier — best on a high-memory Mac."
+        ),
+    ),
     "sana": Family(
         id="sana",
         label="Sana (NVlabs)",
@@ -744,6 +783,62 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("good",  "1024px native; good general-purpose quality"),
             ("weak",  "PyTorch/MPS is still slower than the mflux/MLX models"),
             ("avoid", "Maximum fidelity — SD3.5 / large FLUX models edge it on detail"),
+        ),
+    ),
+    ModelEntry(
+        repo="PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
+        label="PixArt-Σ XL 1024",
+        family="pixart-sigma",
+        size_gb=3.0,
+        gated=False,
+        min_unified_memory_gb=12,
+        recommended_hardware="Apple Silicon 12 GB+. One of the lightest diffusers models — quick to download + run on MPS.",
+        capabilities=("txt2img",),
+        engine="diffusers",
+        diffusers_pipeline="PixArtSigmaPipeline",
+        best_for="A lightweight, fast diffusers DiT — small download, low memory, ungated. Good when you want a quick diffusers-engine model without SD3.5's size.",
+        use_cases=(
+            ("good",  "Lightest/fastest diffusers model here — small download"),
+            ("good",  "Ungated — no HF token / license"),
+            ("good",  "Good general 1024px quality for its size"),
+            ("weak",  "Lower detail ceiling than SD3.5 / large FLUX models"),
+        ),
+    ),
+    ModelEntry(
+        repo="Alpha-VLLM/Lumina-Image-2.0",
+        label="Lumina-Image 2.0",
+        family="lumina2",
+        size_gb=10.0,
+        gated=False,
+        min_unified_memory_gb=16,
+        recommended_hardware="Apple Silicon 16 GB+. ~2B flow DiT with a Gemma text encoder.",
+        capabilities=("txt2img",),
+        engine="diffusers",
+        diffusers_pipeline="Lumina2Pipeline",
+        best_for="A ~2B flow-based DiT with strong multilingual prompt comprehension (Gemma text encoder), fully open. A mid-weight middle ground between PixArt and the large models.",
+        use_cases=(
+            ("good",  "Strong multilingual prompt comprehension (Gemma encoder)"),
+            ("good",  "Ungated, mid-weight — between PixArt and the large models"),
+            ("weak",  "Flow model — ~30-50 steps for best quality"),
+        ),
+    ),
+    ModelEntry(
+        repo="fal/AuraFlow-v0.3",
+        label="AuraFlow v0.3",
+        family="auraflow",
+        size_gb=13.0,
+        gated=False,
+        min_unified_memory_gb=24,
+        recommended_hardware="High-memory Apple Silicon (24 GB+). ~6.8B flow model — heavier on MPS.",
+        capabilities=("txt2img",),
+        engine="diffusers",
+        diffusers_pipeline="AuraFlowPipeline",
+        best_for="fal.ai's open flow-based model — strong prompt following, fully open weights. Heavier than PixArt/Sana/Lumina; a higher-capacity diffusers option for a powerful Mac.",
+        use_cases=(
+            ("good",  "Strong prompt adherence; fully open weights"),
+            ("good",  "A larger-capacity diffusers option than PixArt/Sana/Lumina"),
+            ("weak",  "~6.8B — heavier download + slower on MPS"),
+            ("weak",  "Flow model wants more steps (~50) — longer generations"),
         ),
     ),
 
