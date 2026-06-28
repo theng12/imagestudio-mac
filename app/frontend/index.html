@@ -679,16 +679,42 @@
   <main x-show="tab==='models'" class="page">
     <section class="page-head">
       <h1>Models</h1>
-      <p class="muted">
-        Greyed-out rows are not yet downloaded. Click <em>Download</em> to fetch one to
+
+      <!-- ─── Local / Cloud scope tabs ─── -->
+      <div class="model-scope-tabs" role="tablist" aria-label="Model type">
+        <button class="model-scope-tab" role="tab"
+                :class="{active: modelScope==='local'}"
+                :aria-selected="modelScope==='local'"
+                @click="setModelScope('local')">
+          <span class="model-scope-icon">🖥</span> Local
+          <span class="model-scope-count" x-text="localModelCount"></span>
+        </button>
+        <button class="model-scope-tab" role="tab"
+                :class="{active: modelScope==='cloud'}"
+                :aria-selected="modelScope==='cloud'"
+                @click="setModelScope('cloud')">
+          <span class="model-scope-icon">☁</span> Cloud
+          <span class="model-scope-count" x-text="cloudModelCount"></span>
+        </button>
+      </div>
+
+      <p class="muted" x-show="modelScope==='local'">
+        Models that <strong>download and run on this Mac</strong> (Apple Silicon / MLX).
+        Greyed-out rows aren't downloaded yet — click <em>Download</em> to fetch one to
         your HF cache. Downloads resume automatically if interrupted.
+      </p>
+      <p class="muted" x-show="modelScope==='cloud'" x-cloak>
+        Models that <strong>generate on a hosted API</strong> — no download, no local GPU,
+        nothing to install. Most are free or free-trial; some need a one-time API key
+        (set in <a class="link-accent" @click="tab='settings'">Settings → Cloud provider keys</a>).
+        Your prompt is sent to the provider's servers.
       </p>
 
       <!-- ─── Your-Mac banner (Tier 1 hardware fit) ─── -->
       <!-- Reads /api/system once on init. Shows chip + RAM so the per-card
            fit chips have a clear "compared to what?" anchor. -->
-      <!-- ─── Hardware planner: RAM slider + live fit ─── -->
-      <div class="ram-planner" x-cloak>
+      <!-- ─── Hardware planner: RAM slider + live fit (LOCAL only) ─── -->
+      <div class="ram-planner" x-cloak x-show="modelScope==='local'">
         <div class="ram-planner-head">
           <span class="your-mac-icon">🖥</span>
           <span x-show="system.unified_memory_gb">
@@ -735,8 +761,8 @@
         </p>
       </div>
 
-      <!-- ─── ✨ Best for your RAM — live, per-lane recommendations ─── -->
-      <div class="best-picks" x-show="bestPicks.length" x-cloak>
+      <!-- ─── ✨ Best for your RAM — live, per-lane recommendations (LOCAL only) ─── -->
+      <div class="best-picks" x-show="modelScope==='local' && bestPicks.length" x-cloak>
         <div class="best-picks-head">
           <h2>✨ Best for <span x-text="ramGb"></span> GB</h2>
           <span class="muted small">The model in each lane that best fits your budget — updates as you move the slider. Click a card to find it below.</span>
@@ -759,7 +785,7 @@
         </div>
       </div>
 
-      <details class="primer">
+      <details class="primer" x-show="modelScope==='local'">
         <summary>📚 New here? What does 4B / 4-bit / MLX / gated mean?</summary>
         <div class="primer-body">
           <h3>Anatomy of a model name</h3>
@@ -828,7 +854,7 @@
           <option value="size-desc">Sort: size (large → small)</option>
         </select>
         <div class="library-meta">
-          <span class="muted small" x-text="'Showing ' + filteredModelTotalCount + ' of ' + models.length"></span>
+          <span class="muted small" x-text="'Showing ' + filteredModelTotalCount + ' of ' + scopedModelCount"></span>
           <button class="btn ghost small" x-show="hasActiveFilters" @click="clearAllFilters()">✕ Clear filters</button>
           <!-- Bulk expand/collapse — operates on the currently-filtered list -->
           <button class="btn ghost small" @click="expandAllVisible()" title="Show details on every visible card">▾ Expand all</button>
@@ -846,7 +872,7 @@
         </template>
       </div>
 
-      <div class="library-toolbar-row filter-chips-row">
+      <div class="library-toolbar-row filter-chips-row" x-show="modelScope==='local'">
         <span class="filter-label">Status</span>
         <button class="chip filter-chip status-cached"
                 :class="{active: isStatusFiltered('cached')}"
@@ -876,7 +902,7 @@
       <!-- ─── Hardware + format filters (v1.1.2 / RAM planner) ─── -->
       <!-- Segmented RAM-fit filter — scored live against the RAM slider above.
            Mirrors the Chat Studio model-tab control for a consistent look. -->
-      <div class="library-toolbar-row filter-chips-row">
+      <div class="library-toolbar-row filter-chips-row" x-show="modelScope==='local'">
         <span class="filter-label">RAM fit</span>
         <div class="seg fit-seg">
           <button :class="{active: modelFilters.fitLevel==='all'}"   @click="modelFilters.fitLevel='all'">All</button>
@@ -887,7 +913,7 @@
         <span class="muted small">at <strong x-text="ramGb + ' GB'"></strong></span>
       </div>
 
-      <div class="library-toolbar-row filter-chips-row">
+      <div class="library-toolbar-row filter-chips-row" x-show="modelScope==='local'">
         <span class="filter-label">Quick</span>
         <button class="chip filter-chip filter-chip-mlx"
                 :class="{active: modelFilters.mlxOnly}"
@@ -941,7 +967,7 @@
           </details>
 
           <div class="model-list">
-          <template x-for="m in modelsByFamily[family.id] || []" :key="m.repo">
+          <template x-for="m in filteredModelsByFamily[family.id] || []" :key="m.repo">
             <article class="model-card" :class="cardClass(m)">
               <div class="model-meta">
                 <h3>

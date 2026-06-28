@@ -931,6 +931,49 @@ input.num-input-wide { width: 130px; }
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   text-decoration: underline;
 }
+
+/* ─── Models tab: Local / Cloud scope tabs ─── */
+.model-scope-tabs {
+  display: inline-flex;
+  gap: 4px;
+  margin: 12px 0 14px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.model-scope-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.model-scope-tab:hover { color: var(--text); background: var(--panel-2); }
+.model-scope-tab.active {
+  background: var(--accent);
+  color: #0b1220;
+}
+.model-scope-tab.active:hover { background: var(--accent); }
+.model-scope-icon { font-size: 15px; line-height: 1; }
+.model-scope-count {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  color: inherit;
+  min-width: 20px;
+  text-align: center;
+}
+.model-scope-tab.active .model-scope-count { background: rgba(0,0,0,0.18); }
 .banner.warn.dep-warn { margin-top: 12px; }
 .dep-chip {
   display: inline-block;

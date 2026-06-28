@@ -91,6 +91,11 @@ function studio() {
     _jobStatePrev: {},   // map jobId → previous state, used to detect transitions for toasts
 
     // ──────── Models-tab library filters ────────
+    // Models tab is split into two scopes: local (download + run on this Mac)
+    // and cloud (hosted API). The toggle picks which set of models — and which
+    // toolbar controls — are shown. Persisted across sessions.
+    modelScope: "local",          // "local" | "cloud"
+
     modelFilters: {
       search: "",
       families: new Set(),
@@ -326,6 +331,9 @@ function studio() {
       const f = this.modelFilters;
       const q = (f.search || "").trim().toLowerCase();
       const matches = (m) => {
+        // Local/Cloud scope split (the Models tab toggle).
+        if (this.modelScope === "cloud" && !m.is_cloud) return false;
+        if (this.modelScope === "local" && m.is_cloud) return false;
         if (f.families.size > 0 && !f.families.has(m.family)) return false;
         if (f.statuses.size > 0) {
           const state = m.cache?.state || "absent";
@@ -339,19 +347,24 @@ function studio() {
             if (!caps.has(wanted)) return false;
           }
         }
-        // Apple Silicon (MLX) filter — only show pre-quantized MLX entries.
-        if (f.mlxOnly && !m.apple_optimized) return false;
-        // Fits my Mac filter — hide entries that would OOM/swap heavily.
-        // We exclude only "risky" (below floor); "tight" still shows since the
-        // user might consciously accept that trade-off. "unknown" also shows
-        // since we don't have evidence either way.
-        if (f.fitLevel && f.fitLevel !== "all") {
-          const st = this.fitFor(m.min_unified_memory_gb).state;
-          if (f.fitLevel === "ok"    && st !== "ok")    return false;
-          if (f.fitLevel === "tight" && st !== "tight") return false;
-          if (f.fitLevel === "over"  && st !== "risky") return false;
+        // Hardware filters below only apply to LOCAL models (cloud models have
+        // no MLX/RAM-fit concept). Guarding by scope also prevents a persisted
+        // mlxOnly=true from wiping out the cloud tab.
+        if (this.modelScope === "local") {
+          // Apple Silicon (MLX) filter — only show pre-quantized MLX entries.
+          if (f.mlxOnly && !m.apple_optimized) return false;
+          // Fits my Mac filter — hide entries that would OOM/swap heavily.
+          // We exclude only "risky" (below floor); "tight" still shows since the
+          // user might consciously accept that trade-off. "unknown" also shows
+          // since we don't have evidence either way.
+          if (f.fitLevel && f.fitLevel !== "all") {
+            const st = this.fitFor(m.min_unified_memory_gb).state;
+            if (f.fitLevel === "ok"    && st !== "ok")    return false;
+            if (f.fitLevel === "tight" && st !== "tight") return false;
+            if (f.fitLevel === "over"  && st !== "risky") return false;
+          }
+          if (f.fitsMyMac && this.fitFor(m.min_unified_memory_gb).state === "risky") return false;
         }
-        if (f.fitsMyMac && this.fitFor(m.min_unified_memory_gb).state === "risky") return false;
         if (q) {
           const hay = ((m.label || "") + " " + (m.repo || "") + " " + (m.best_for || "")).toLowerCase();
           if (!hay.includes(q)) return false;
@@ -374,15 +387,27 @@ function studio() {
       for (const fam of Object.keys(out)) out[fam].sort(cmp);
       return out;
     },
+    /** True when a model belongs to the currently-selected scope tab. */
+    inScope(m) {
+      return this.modelScope === "cloud" ? !!m.is_cloud : !m.is_cloud;
+    },
+    get localModelCount() { return this.models.filter(m => !m.is_cloud).length; },
+    get cloudModelCount() { return this.models.filter(m => m.is_cloud).length; },
+    /** Total models in the current scope (the "of N" denominator). */
+    get scopedModelCount() { return this.models.filter(m => this.inScope(m)).length; },
     get availableCapabilities() {
       const set = new Set();
-      for (const m of this.models) for (const c of (m.capabilities || [])) set.add(c);
+      for (const m of this.models) {
+        if (!this.inScope(m)) continue;
+        for (const c of (m.capabilities || [])) set.add(c);
+      }
       return Array.from(set).sort();
     },
     get availableFamilies() {
       const seen = new Set();
       const out = [];
       for (const m of this.models) {
+        if (!this.inScope(m)) continue;
         if (seen.has(m.family)) continue;
         seen.add(m.family);
         out.push({ id: m.family, label: m.family_label || this.families?.[m.family]?.label || m.family });
@@ -483,7 +508,25 @@ function studio() {
         if (savedFit !== null) {
           this.modelFilters.fitsMyMac = savedFit === "true";
         }
+        const savedScope = localStorage.getItem("imagestudio.modelFilters.modelScope");
+        if (savedScope === "local" || savedScope === "cloud") {
+          this.modelScope = savedScope;
+        }
       } catch {}
+    },
+    /** Switch the Models tab between Local and Cloud. Filters are scope-specific
+     *  (families/statuses/etc. only exist in one scope), so reset them on switch
+     *  to avoid landing on an accidentally-empty list. Search + sort persist. */
+    setModelScope(scope) {
+      if (scope !== "local" && scope !== "cloud") return;
+      if (this.modelScope === scope) return;
+      this.modelScope = scope;
+      this.modelFilters.families = new Set();
+      this.modelFilters.statuses = new Set();
+      this.modelFilters.capabilities = new Set();
+      this.modelFilters.mlxOnly = false;
+      this.modelFilters.fitLevel = "all";
+      this._persistFilterPref("modelScope", scope);
     },
     /** Per-card expand/collapse. Default state is collapsed (compact card);
      *  the user clicks "Show details" to reveal best_for + use_cases + saved-loc. */

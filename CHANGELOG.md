@@ -10,6 +10,25 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.14.1] — 2026-06-29
+
+### Changed — Models tab split into Local / Cloud sub-tabs
+
+The Models tab now has a **Local | Cloud** toggle at the top, each with a live count (e.g. *Local 25 · Cloud 12*). This declutters the page by showing only what's relevant to each kind of model:
+
+- **Local** — the download-and-run-on-this-Mac models, with the full hardware machinery: RAM planner, "✨ Best for your RAM" picks, the beginner primer, and the Status / RAM-fit / MLX filters.
+- **Cloud** — the hosted-API models, with a trimmed toolbar (Search + Sort + provider Family + Capability). The RAM planner, best-picks, primer, and download/MLX/RAM-fit filters are hidden — none of them apply to cloud models — and the intro points to *Settings → Cloud provider keys*.
+
+The chosen tab is **remembered across sessions**. Switching tabs resets the scope-specific filters so you never land on an accidentally-empty list. Family chips, the "Showing N of M" count, and capability chips are all scoped to the active tab.
+
+### Fixed
+- Model cards now render the **filtered** list (`filteredModelsByFamily`) instead of the unfiltered family list, so the card grid always matches the family-header count and the active filters (previously a family could show a "(2)" header but render all its cards).
+
+### Notes
+- PATCH — frontend only, **no new deps**. Just run **Update**.
+
+---
+
 ## [1.14.0] — 2026-06-29
 
 ### Added — six more free cloud models (variety beyond FLUX/SD), now 12 total
