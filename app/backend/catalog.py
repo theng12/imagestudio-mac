@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+from . import sizes as _sizes
+
 
 @dataclass(frozen=True)
 class Family:
@@ -399,6 +401,10 @@ class ModelEntry:
     # Exposed in the catalog so the UI hides the aspect picker and Story Studio
     # knows not to offer ratios for these models.
     supports_custom_dimensions: bool = True
+    # For fixed-output models (supports_custom_dimensions=False): the single real
+    # output size the endpoint emits, used to build the one `sizes` entry. Defaults
+    # to 1024×1024 when unset.
+    fixed_size: Optional[tuple] = None
     # True when the cloud model needs a BILLING-enabled account, not just a key
     # (Gemini image gen: free-tier quota is 0). Surfaced as fit.state="needs_billing".
     requires_billing: bool = False
@@ -992,6 +998,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         cloud_provider="cloudflare",
         cloud_model_id="@cf/black-forest-labs/flux-1-schnell",
         supports_custom_dimensions=False,  # Workers AI schnell ignores width/height
+        fixed_size=(1024, 1024),           # measured: emits 1024×1024 regardless of request
         best_for="Free cloud FLUX.1 schnell on Cloudflare's edge — fast, with a real free-tier quota (10k neurons/day). Needs a free Cloudflare Account ID + API token. NOTE: this endpoint has a fixed output size and ignores the aspect-ratio control — for custom dimensions on Cloudflare, use SDXL, SDXL-Lightning, or Leonardo Lucid/Phoenix instead.",
         use_cases=(
             ("good",  "Free, fast schnell generation with a real free-tier quota"),
@@ -1035,6 +1042,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         cloud_provider="gemini",
         cloud_model_id="gemini-2.5-flash-image",
         supports_custom_dimensions=False,  # Gemini chooses the output size
+        fixed_size=(1024, 1024),           # Nano Banana emits ~1024×1024
         requires_billing=True,             # free-tier quota is 0 for image gen
         best_for="Google's Gemini 2.5 Flash Image ('Nano Banana') — a different model family from FLUX/SD, strong at photorealism, text rendering, and following complex instructions. IMPORTANT: this is NOT free — Google's free tier allows 0 image-generation requests, so it needs a Google AI Studio / Cloud account with BILLING ENABLED. Output size is model-chosen (~1024px); width/height + seed are ignored.",
         use_cases=(
@@ -1318,6 +1326,12 @@ def serialize_model(m: ModelEntry) -> dict:
         # cloud model that needs a billing-enabled account, not just a key.
         "supports_custom_dimensions": m.supports_custom_dimensions,
         "requires_billing": m.requires_billing,
+        # New (v1.17.0) — ready-to-use per-model size menu so clients (Story
+        # Studio) drive aspect-ratio + resolution pickers with no pixel math.
+        # `sizes`: [{aspect_ratio,label,width,height,tier,[default],[fixed]}]
+        # `default_aspect_ratio`: the AR to preselect.
+        # `custom`: {min_px,max_px,step,max_pixels} free-sizing range, or null.
+        **_sizes.build_sizes(m),
         # New in v1.9.0 — local inference engine (mflux vs diffusers).
         "engine": m.engine,
         "is_diffusers": m.is_diffusers,

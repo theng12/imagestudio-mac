@@ -10,6 +10,34 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.17.0] — 2026-06-29
+
+### Added — per-model `sizes` menu in `GET /api/catalog` (for Story Studio)
+
+Each catalog model now carries a ready-to-use **`sizes`** list so clients drive aspect-ratio + resolution pickers with **zero pixel math** — every entry is an exact accepted `{width, height}`:
+
+```json
+"default_aspect_ratio": "16:9",
+"custom": { "min_px": 512, "max_px": 2048, "step": 8, "max_pixels": 4194304 },
+"sizes": [
+  { "aspect_ratio": "16:9", "label": "1080p", "width": 1920, "height": 1080, "tier": "balanced", "default": true },
+  { "aspect_ratio": "1:1",  "label": "1024",  "width": 1024, "height": 1024, "tier": "balanced" }
+]
+```
+
+- **Local models** → a curated `/16`-aligned ladder capped at the local ~1.3 MP budget (8 aspect ratios × up to 3 tiers).
+- **Cloud models** → familiar standard resolutions (720p / 1080p / 1440p …), `/8`-aligned, capped at each provider's real max side — **cloud is NOT downscaled to the local cap** (e.g. Cloudflare/Nebius reach 1080p; Together/HF cap at 720p/1536; Pollinations to 1080p).
+- **Fixed-output models** (Cloudflare FLUX schnell — measured `1024×1024`; Gemini) → a single size with **`fixed: true`**.
+- Every model marks exactly one entry **`default: true`** (the `balanced` tier of `default_aspect_ratio`, or the largest available of that AR). `tier` is `fast | balanced | high | ultra` (smallest→largest) so clients can map **Fast / Balanced / Highest** presets directly.
+- `custom: { min_px, max_px, step, max_pixels }` gives the free-sizing range for arbitrary-dimension models (null for fixed).
+
+Backward-compatible: older clients that don't read `sizes` are unaffected; `is_cloud`, `cloud_provider`, `cloud_credentials_ok`, `fit.state`, `cache.state`, `capabilities`, `supports_custom_dimensions`, and `requires_billing` are all unchanged.
+
+### Note
+- MINOR — additive catalog fields, **no new deps**. Just **Update**. Implemented in `app/backend/sizes.py`.
+
+---
+
 ## [1.16.0] — 2026-06-29
 
 ### Changed — reworked the image history / result view

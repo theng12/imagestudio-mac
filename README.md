@@ -171,6 +171,15 @@ permission), so there's no separate field. The examples below use Pollinations
 because it needs no key, but the flow is identical for the others once their key
 is saved.
 
+**Per-model size menu.** Every catalog model (local + cloud) also carries a
+ready-to-use **`sizes`** array — `[{ aspect_ratio, label, width, height, tier,
+default?, fixed? }]` — plus `default_aspect_ratio` and a `custom`
+`{ min_px, max_px, step, max_pixels }` range (null for fixed-output models). Cloud
+models list their full higher resolutions (up to 1080p+); local models a
+`/16`-aligned ~1.3 MP ladder; fixed-output endpoints a single `fixed: true` size.
+`tier` is `fast | balanced | high | ultra` so clients can map Fast/Balanced/Highest
+presets directly. See `app/backend/sizes.py`.
+
 Each cloud model's catalog entry also exposes `cloud_credentials_ok` (true only
 when the required credential is set), `cloud_provider_label`, and
 `cloud_signup_url` so the UI — and downstream consumers — can gate readiness and
