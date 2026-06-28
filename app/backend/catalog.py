@@ -297,18 +297,19 @@ FAMILIES: dict[str, Family] = {
     ),
     "gemini": Family(
         id="gemini",
-        label="Google AI Studio (cloud)",
+        label="Google AI Studio (cloud, needs billing)",
         summary=(
             "Image generation with Google's Gemini 2.5 Flash Image ('Nano Banana'). "
-            "Generous permanent free tier (no credit card) — just a free Google AI "
-            "Studio API key (set it once in Settings → Cloud provider keys). A "
-            "different model family from the FLUX/SD providers."
+            "A different model family from the FLUX/SD providers. NOTE: this is NOT "
+            "free — Google's free tier allows 0 image-generation requests, so it "
+            "needs a Google AI Studio / Cloud account with BILLING ENABLED."
         ),
         how_to_use=(
-            "Add your Google AI Studio API key in Settings, then pick the Gemini "
-            "model and generate. Output size is chosen by the model (~1024px) — the "
-            "width/height controls and seed are ignored. Stricter content filters "
-            "than the open models. Runs on Google's servers — prompts leave this Mac."
+            "Enable billing on your Google AI Studio / Cloud account, add the API "
+            "key in Settings, then pick the Gemini model and generate. Without "
+            "billing you'll get a quota error (free tier = 0 image requests). Output "
+            "size is chosen by the model (~1024px) — width/height + seed are ignored. "
+            "Stricter content filters than the open models. Runs on Google's servers."
         ),
     ),
     "nebius": Family(
@@ -391,6 +392,16 @@ class ModelEntry:
     # Optional explicit diffusers pipeline class name (e.g. "StableDiffusion3Pipeline"
     # or a custom "Ideogram4Pipeline"). None → AutoPipelineForText2Image resolves it.
     diffusers_pipeline: Optional[str] = None
+    # ── Output-dimension capability (v1.15.0) ───────────────────────────────
+    # Whether this model honors the requested width/height (i.e. the aspect-ratio
+    # presets do anything). False for fixed-output endpoints — Cloudflare's FLUX
+    # schnell and Gemini both ignore width/height and emit a model-chosen size.
+    # Exposed in the catalog so the UI hides the aspect picker and Story Studio
+    # knows not to offer ratios for these models.
+    supports_custom_dimensions: bool = True
+    # True when the cloud model needs a BILLING-enabled account, not just a key
+    # (Gemini image gen: free-tier quota is 0). Surfaced as fit.state="needs_billing".
+    requires_billing: bool = False
 
     @property
     def is_apple_optimized(self) -> bool:
@@ -980,7 +991,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         provider="cloud",
         cloud_provider="cloudflare",
         cloud_model_id="@cf/black-forest-labs/flux-1-schnell",
-        best_for="Free cloud FLUX.1 schnell on Cloudflare's edge — fast, with a real free-tier quota (10k neurons/day). Needs a free Cloudflare Account ID + API token. Pick this over the no-key Pollinations option when you want better/known rate limits.",
+        supports_custom_dimensions=False,  # Workers AI schnell ignores width/height
+        best_for="Free cloud FLUX.1 schnell on Cloudflare's edge — fast, with a real free-tier quota (10k neurons/day). Needs a free Cloudflare Account ID + API token. NOTE: this endpoint has a fixed output size and ignores the aspect-ratio control — for custom dimensions on Cloudflare, use SDXL, SDXL-Lightning, or Leonardo Lucid/Phoenix instead.",
         use_cases=(
             ("good",  "Free, fast schnell generation with a real free-tier quota"),
             ("good",  "Macs without the GPU/memory for local FLUX"),
@@ -1012,21 +1024,23 @@ CATALOG: tuple[ModelEntry, ...] = (
     ),
     ModelEntry(
         repo="gemini/gemini-2.5-flash-image",
-        label="Gemini 2.5 Flash Image — Google (cloud)",
+        label="Gemini 2.5 Flash Image — Google (needs billing)",
         family="gemini",
         size_gb=0.0,
         gated=False,
         min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Google. Needs a free Google AI Studio API key (Settings).",
+        recommended_hardware="None — runs on Google. Needs a Google AI Studio API key WITH billing enabled (the free tier allows 0 image requests).",
         capabilities=("txt2img",),
         provider="cloud",
         cloud_provider="gemini",
         cloud_model_id="gemini-2.5-flash-image",
-        best_for="Google's Gemini 2.5 Flash Image ('Nano Banana') with a genuinely generous permanent free tier (no credit card). A different model family from FLUX/SD — strong at photorealism, text rendering, and following complex instructions. Best free option by daily volume. Output size is model-chosen (~1024px); width/height + seed are ignored.",
+        supports_custom_dimensions=False,  # Gemini chooses the output size
+        requires_billing=True,             # free-tier quota is 0 for image gen
+        best_for="Google's Gemini 2.5 Flash Image ('Nano Banana') — a different model family from FLUX/SD, strong at photorealism, text rendering, and following complex instructions. IMPORTANT: this is NOT free — Google's free tier allows 0 image-generation requests, so it needs a Google AI Studio / Cloud account with BILLING ENABLED. Output size is model-chosen (~1024px); width/height + seed are ignored.",
         use_cases=(
-            ("good",  "Highest free daily volume of the cloud options — no card needed"),
-            ("good",  "A non-FLUX/SD look — great for photoreal scenes and legible text in images"),
+            ("good",  "A non-FLUX/SD look — photoreal scenes and legible text in images"),
             ("good",  "Macs without the GPU/memory for local models"),
+            ("avoid", "Free-only setups — Gemini image gen requires billing enabled (free tier = 0 requests)"),
             ("weak",  "Fixed model-chosen output size — width/height + seed are ignored"),
             ("weak",  "Stricter content filters than the open FLUX/SD models"),
             ("avoid", "Private/sensitive prompts — they're sent to Google's servers"),
@@ -1246,6 +1260,20 @@ def serialize_model(m: ModelEntry) -> dict:
                     "actual_gb": None,
                     "required_gb": None,
                 }
+            elif m.requires_billing:
+                # Credential is set, but the provider needs a billing-enabled
+                # account (Gemini image gen: free-tier quota is 0). Surface it
+                # the same way as needs_key so the UI/Story Studio can gate it.
+                fit = {
+                    "state": "needs_billing",
+                    "label": "Needs billing",
+                    "hint": (
+                        "Requires billing enabled on your Google AI Studio / Cloud "
+                        "account — the free tier allows 0 image-generation requests."
+                    ),
+                    "actual_gb": None,
+                    "required_gb": None,
+                }
         except Exception:
             # If settings can't be read for any reason, fail safe to not-ready
             # for keyed providers (so we never falsely claim ready).
@@ -1284,6 +1312,12 @@ def serialize_model(m: ModelEntry) -> dict:
         # "needs API key" state. Null for local models.
         "cloud_provider_label": cloud_provider_label,
         "cloud_signup_url": cloud_signup_url,
+        # New (v1.15.0) — does the model honor width/height? False for fixed-size
+        # endpoints (Cloudflare FLUX schnell, Gemini). Story Studio + the UI use
+        # this to hide/disable the aspect-ratio picker. requires_billing flags a
+        # cloud model that needs a billing-enabled account, not just a key.
+        "supports_custom_dimensions": m.supports_custom_dimensions,
+        "requires_billing": m.requires_billing,
         # New in v1.9.0 — local inference engine (mflux vs diffusers).
         "engine": m.engine,
         "is_diffusers": m.is_diffusers,

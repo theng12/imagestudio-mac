@@ -230,6 +230,19 @@
               </p>
             </div>
           </div>
+          <!-- Cloud model that needs a billing-enabled account (Gemini) -->
+          <div class="banner warn dep-warn"
+               x-show="gen.repo && selectedModel && selectedModel.is_cloud && (selectedModel.fit && selectedModel.fit.state) === 'needs_billing'"
+               x-cloak>
+            <div>
+              <strong>💳 This model needs billing enabled.</strong>
+              <p class="muted" x-text="(selectedModel && selectedModel.fit && selectedModel.fit.hint) || 'This model requires a billing-enabled account.'"></p>
+              <p class="muted">
+                <a class="link-accent" href="https://aistudio.google.com/" target="_blank" rel="noopener">Enable billing on Google AI Studio ↗</a> —
+                or switch to a <strong>free</strong> model like <strong>Pollinations</strong> or <strong>Cloudflare SDXL</strong> to generate right now.
+              </p>
+            </div>
+          </div>
           <!-- Per-model dependency warning (LOCAL models only) -->
           <div class="banner warn dep-warn"
                x-show="gen.repo && !isModelReady(gen.repo) && !(selectedModel && selectedModel.is_cloud)"
@@ -360,7 +373,15 @@
         <!-- Aspect ratio -->
         <section class="control-block">
           <label>Aspect ratio</label>
-          <div class="aspect-grid">
+          <!-- Fixed-output models (Cloudflare FLUX schnell, Gemini) ignore
+               width/height — show a note instead of the (no-op) ratio grid. -->
+          <template x-if="selectedModel && selectedModel.supports_custom_dimensions === false">
+            <p class="muted small fixed-size-note">
+              📐 This model has a <strong>fixed output size</strong> and ignores the aspect ratio.
+              <span x-show="selectedModel.cloud_provider==='cloudflare'">For custom ratios on Cloudflare, switch to <strong>SDXL</strong>, <strong>SDXL-Lightning</strong>, or <strong>Leonardo Lucid/Phoenix</strong>.</span>
+            </p>
+          </template>
+          <div class="aspect-grid" x-show="!selectedModel || selectedModel.supports_custom_dimensions !== false">
             <template x-for="p in gen.presets" :key="p.ratio">
               <button class="aspect"
                       :class="{active: gen.aspect===p.ratio}"
@@ -1019,7 +1040,7 @@
                   <!-- CLOUD readiness chip — runs in the cloud, so readiness is
                        about the API credential, not local engine/deps. -->
                   <span class="chip engine-ready"
-                        x-show="m.is_cloud && m.cloud_credentials_ok !== false"
+                        x-show="m.is_cloud && m.cloud_credentials_ok !== false && (m.fit && m.fit.state) !== 'needs_billing'"
                         title="Runs in the cloud — ready to generate.">
                     ☁ cloud ready
                   </span>
@@ -1028,6 +1049,14 @@
                         :title="(m.fit && m.fit.hint) || 'Add the required API credential in Settings to use this cloud model.'"
                         @click="tab='settings'">
                     🔑 needs API key
+                  </span>
+                  <!-- Billing-gated cloud model (Gemini): key is set but the
+                       account needs billing enabled. -->
+                  <span class="chip engine-missing"
+                        x-show="m.is_cloud && (m.fit && m.fit.state) === 'needs_billing'"
+                        :title="(m.fit && m.fit.hint) || 'This model needs billing enabled on your account.'"
+                        @click="tab='generate'; gen.repo=m.repo">
+                    💳 needs billing
                   </span>
                   <!-- Provider link — opens the provider's API page (where you get
                        the key, or learn more for keyless Pollinations). Shown for

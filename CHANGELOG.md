@@ -10,6 +10,31 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.15.0] — 2026-06-29
+
+### Added — per-model dimension capability (exposed to Story Studio) + more aspect ratios
+
+- **`supports_custom_dimensions`** (boolean) is now in each `/api/catalog` model. `false` for fixed-output endpoints that ignore width/height — **Cloudflare FLUX schnell** and **Gemini** — and `true` for everything else. The Generate UI hides the aspect-ratio picker and shows a "fixed output size" note for those models, and Story Studio can use it to decide whether to offer ratio options per model.
+- **4 more aspect ratios**: `5:4`, `4:5`, `2:1`, `1:2` (now 12 presets total), all ~1 MP and /16-aligned.
+
+### Changed — Gemini marked as "needs billing" (it is no longer free)
+
+Google's free tier now allows **0** `gemini-2.5-flash-image` requests (`429: free_tier_requests, limit: 0`) — image generation requires a **billing-enabled** account. So Gemini was relabelled accordingly and is no longer presented as free:
+
+- New **`requires_billing`** catalog field (true for Gemini); its `fit.state` is now **`needs_billing`** with a hint, so the UI/Story Studio gate it like a credential-missing model (shown but not selectable, with a "💳 needs billing" chip + a Generate-tab banner linking to enable billing).
+- The Gemini provider now turns the raw `429` into a clear message: *"Gemini image generation needs billing enabled … the free tier allows 0 image requests."*
+- Catalog label, `best_for`, family explainer, and README all updated to say **needs billing (not free)**.
+
+### Clarified — Cloudflare FLUX schnell has a fixed size
+
+It was always sending width/height that the endpoint ignores (hence "no ratio control"). It's now flagged `supports_custom_dimensions: false`, and its `best_for` points users to **SDXL / SDXL-Lightning / Leonardo Lucid/Phoenix** for custom ratios on Cloudflare.
+
+### Note
+- The credential-readiness signal (`cloud_credentials_ok` / `fit.state: "needs_key"`) from v1.12.0 is already live and correct — verified on the running service.
+- MINOR — new catalog fields + UI, **no new deps**. Just **Update**.
+
+---
+
 ## [1.14.1] — 2026-06-29
 
 ### Changed — Models tab split into Local / Cloud sub-tabs

@@ -974,6 +974,17 @@ input.num-input-wide { width: 130px; }
   text-align: center;
 }
 .model-scope-tab.active .model-scope-count { background: rgba(0,0,0,0.18); }
+
+/* "Fixed output size" note shown in place of the aspect grid for models that
+   ignore width/height (Cloudflare FLUX schnell, Gemini). */
+.fixed-size-note {
+  margin: 2px 0 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  line-height: 1.5;
+}
 .banner.warn.dep-warn { margin-top: 12px; }
 .dep-chip {
   display: inline-block;

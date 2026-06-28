@@ -158,7 +158,7 @@ several model families (FLUX, SDXL, SD3, NVIDIA Sana, Leonardo, Gemini):
 | `cloudflare/sdxl-lightning` | Cloudflare Workers AI | Account ID + API token | **SDXL-Lightning**; fastest free CF model (few-step) |
 | `cloudflare/dreamshaper-lcm` | Cloudflare Workers AI | Account ID + API token | **DreamShaper 8 LCM** (SD1.5); stylized/illustrative |
 | `together/flux-1-schnell-free` | Together AI | API key | FLUX schnell; free endpoint; honors width/height, 4 steps |
-| `gemini/gemini-2.5-flash-image` | Google AI Studio | API key | **Gemini Nano Banana** (non-FLUX/SD); free ~500/day, **no card**; fixed size + seed ignored |
+| `gemini/gemini-2.5-flash-image` | Google AI Studio | API key **+ billing** | **Gemini Nano Banana** (non-FLUX/SD); **NOT free** — needs billing enabled (free tier = 0 image requests); fixed size + seed ignored |
 | `nebius/flux-dev` | Nebius AI Studio | API key | **FLUX dev** quality; free trial credits, no card; honors width/height |
 | `huggingface/flux-1-schnell` | Hugging Face | Reuses your **HF token** | FLUX schnell; token needs **Inference Providers** permission |
 | `huggingface/sd3-medium` | Hugging Face | Reuses your **HF token** | **Stable Diffusion 3 Medium**; better text/prompt adherence |

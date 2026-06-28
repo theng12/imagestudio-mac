@@ -67,6 +67,16 @@ class GeminiProvider(CloudProvider):
                 payload = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:400]
+            # 429 on the free tier means billing isn't enabled — Gemini image
+            # generation has a free-tier quota of 0. Give an actionable message.
+            if e.code == 429 and ("free_tier" in detail or "quota" in detail.lower()):
+                raise CloudGenerationError(
+                    "Gemini image generation needs billing enabled on your Google "
+                    "AI Studio / Cloud account — the free tier allows 0 image "
+                    "requests (HTTP 429 quota exceeded). Enable billing at "
+                    "https://aistudio.google.com/ (or switch to a free model like "
+                    "Pollinations / Cloudflare SDXL)."
+                ) from e
             raise CloudGenerationError(f"Gemini HTTP {e.code}: {detail}") from e
         except Exception as e:
             raise CloudGenerationError(

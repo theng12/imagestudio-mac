@@ -713,7 +713,9 @@ function studio() {
       // The backend reports cloud_credentials_ok (false for Cloudflare/Together
       // when their key/token is missing; always true for Pollinations + local).
       const m = (this.models || []).find(x => x.repo === repo);
-      if (m && m.is_cloud) return m.cloud_credentials_ok !== false;
+      // Cloud: needs the credential set AND (for billing-gated models like Gemini)
+      // billing enabled — which surfaces as fit.state === 'needs_billing'.
+      if (m && m.is_cloud) return m.cloud_credentials_ok !== false && m.fit?.state !== 'needs_billing';
       const e = this.modelEngine(repo);
       if (!e) return true;   // unknown engine → assume ready; API will 503 if not
       return !!e.ready;
@@ -1789,6 +1791,7 @@ function studio() {
         risky:   "✗ may not fit",
         unknown: "? fit unknown",
         needs_key: "🔑 needs key",   // cloud model whose API credential isn't set
+        needs_billing: "💳 needs billing",  // cloud model needing a paid account (Gemini)
       };
       return map[fit.state] || "";
     },
