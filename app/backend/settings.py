@@ -29,14 +29,23 @@ DEFAULTS: dict[str, Any] = {
     "cloudflare_account_id": "",
     "cloudflare_api_token": "",
     "together_api_key": "",
+    # Cloud-provider credentials (v1.13.0).
+    "gemini_api_key": "",
+    "nebius_api_key": "",
 }
 
 # Cloud-provider credential mapping: provider id -> the settings keys it needs.
 # Read by generation._generate_cloud to build the per-provider config dict.
+# Note: huggingface reuses the app's existing `hf_token` (also used for
+# downloads) — no separate key, so a token set for downloads also unlocks HF
+# cloud generation (as long as it has the "Inference Providers" permission).
 CLOUD_CREDENTIAL_KEYS: dict[str, list[str]] = {
     "pollinations": [],
     "cloudflare": ["cloudflare_account_id", "cloudflare_api_token"],
     "together": ["together_api_key"],
+    "gemini": ["gemini_api_key"],
+    "nebius": ["nebius_api_key"],
+    "huggingface": ["hf_token"],
 }
 
 _cache: dict[str, Any] = {}
@@ -97,6 +106,74 @@ def get_cloud_credentials(provider_id: str) -> dict:
     return out
 
 
+# Human-readable name for the credential a keyed provider needs — used to build
+# the "Add your <X> in Settings" hint surfaced in the catalog (fit.hint).
+CLOUD_CREDENTIAL_LABELS: dict[str, str] = {
+    "cloudflare": "Cloudflare Account ID + API token",
+    "together": "Together API key",
+    "gemini": "Google AI Studio (Gemini) API key",
+    "nebius": "Nebius API key",
+    "huggingface": "Hugging Face token (with Inference Providers permission)",
+}
+
+# Display name for each cloud provider — surfaced on model cards as "via <name>".
+CLOUD_PROVIDER_LABELS: dict[str, str] = {
+    "pollinations": "Pollinations",
+    "cloudflare": "Cloudflare Workers AI",
+    "together": "Together AI",
+    "gemini": "Google AI Studio",
+    "nebius": "Nebius AI Studio",
+    "huggingface": "Hugging Face",
+}
+
+# Where a user goes to get the credential (or, for keyless providers, to learn
+# about the service). Surfaced in the catalog as `cloud_signup_url` so the UI —
+# and downstream consumers like Story Studio — can link straight to it from the
+# "needs API key" state instead of making the user hunt for the dashboard.
+CLOUD_CREDENTIAL_URLS: dict[str, str] = {
+    "pollinations": "https://pollinations.ai",
+    "cloudflare": "https://dash.cloudflare.com/profile/api-tokens",
+    "together": "https://api.together.ai/settings/api-keys",
+    "gemini": "https://aistudio.google.com/apikey",
+    "nebius": "https://studio.nebius.com/settings/api-keys",
+    # Deep link that pre-selects the "Inference Providers" permission HF needs.
+    "huggingface": "https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained",
+}
+
+
+def cloud_provider_label(provider_id: Optional[str]) -> str:
+    """Human-readable provider name, e.g. 'Together AI'. Falls back to the id."""
+    return CLOUD_PROVIDER_LABELS.get(provider_id or "", (provider_id or "").title())
+
+
+def cloud_signup_url(provider_id: Optional[str]) -> str:
+    """URL where the user gets this provider's credential (or learns about it).
+    Empty string for unknown providers."""
+    return CLOUD_CREDENTIAL_URLS.get(provider_id or "", "")
+
+
+def cloud_credentials_ok(provider_id: Optional[str]) -> bool:
+    """True when EVERY credential the provider needs is set (non-empty).
+
+    Always True for providers that need none (e.g. Pollinations → empty key
+    list). This mirrors exactly what the provider classes check before a
+    request, so 'ok' here means 'won't fail at generate-time for a missing
+    credential'. Unknown/None provider → treat as not-ok (can't verify)."""
+    if not provider_id or provider_id not in CLOUD_CREDENTIAL_KEYS:
+        return False
+    for k in CLOUD_CREDENTIAL_KEYS[provider_id]:
+        v = get(k)
+        if not (isinstance(v, str) and v.strip()):
+            return False
+    return True
+
+
+def cloud_credentials_hint(provider_id: Optional[str]) -> str:
+    """One-line setup hint for a cloud model whose credential is missing."""
+    label = CLOUD_CREDENTIAL_LABELS.get(provider_id or "", "API credentials")
+    return f"Add your {label} in Settings to use this model."
+
+
 def _mask(value: Optional[str]) -> str:
     """First 3 + last 4 chars, or bullets for short values; '' when empty."""
     if not value:
@@ -115,7 +192,8 @@ def serialize_public() -> dict:
         "hf_token_masked": _mask(token),
     }
     # Cloud-provider credentials — masked status only, never the raw value.
-    for key in ("cloudflare_account_id", "cloudflare_api_token", "together_api_key"):
+    for key in ("cloudflare_account_id", "cloudflare_api_token", "together_api_key",
+                "gemini_api_key", "nebius_api_key"):
         v = get(key)
         v = v.strip() if isinstance(v, str) else ""
         out[f"{key}_set"] = bool(v)

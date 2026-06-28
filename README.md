@@ -145,18 +145,29 @@ curl -N http://<server>:<port>/api/downloads/stream
 
 Most models in Image Studio KH run **locally** on Apple Silicon via mflux/MLX.
 A second class of model — catalog entries with `provider: "cloud"` — generates
-on a hosted API instead. There are three, all free:
+on a hosted API instead. There are six, all free or free-trial:
 
 | Model (`repo`) | Provider | Key needed? | Notes |
 |---|---|---|---|
 | `pollinations/flux` | Pollinations | **None** | Zero-setup; fixed best-effort service |
 | `cloudflare/flux-1-schnell` | Cloudflare Workers AI | Account ID + API token | Free tier 10k neurons/day; **fixed output size** |
 | `together/flux-1-schnell-free` | Together AI | API key | Free schnell endpoint; honors width/height, 4 steps |
+| `gemini/gemini-2.5-flash-image` | Google AI Studio | API key | Permanent free tier, **no card**; ~500 img/day; non-FLUX model; **fixed output size + seed ignored** |
+| `nebius/flux-dev` | Nebius AI Studio | API key | Free **trial credits**, no card; **FLUX dev** quality; honors width/height |
+| `huggingface/flux-1-schnell` | Hugging Face | Reuses your **HF token** | Token needs the **Inference Providers** permission; small monthly free credit |
 
 Keys for the keyed providers are entered once in **Settings → Cloud provider
 keys** (stored in `app/backend/settings.json`, gitignored, sent only to that
-provider). The examples below use Pollinations because it needs no key, but the
-flow is identical for the others once their key is saved.
+provider). Hugging Face is the exception — it reuses the same **Hugging Face
+token** you set for downloads (it just needs the *Inference Providers*
+permission), so there's no separate field. The examples below use Pollinations
+because it needs no key, but the flow is identical for the others once their key
+is saved.
+
+Each cloud model's catalog entry also exposes `cloud_credentials_ok` (true only
+when the required credential is set), `cloud_provider_label`, and
+`cloud_signup_url` so the UI — and downstream consumers — can gate readiness and
+link straight to where you get the key.
 
 **How it works**
 

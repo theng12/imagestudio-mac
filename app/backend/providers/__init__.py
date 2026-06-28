@@ -18,11 +18,17 @@ from .base import CloudProvider, CloudRequest, CloudGenerationError
 from .pollinations import PollinationsProvider
 from .cloudflare import CloudflareProvider
 from .together import TogetherProvider
+from .gemini import GeminiProvider
+from .nebius import NebiusProvider
+from .huggingface import HuggingFaceProvider
 
 _REGISTRY: dict[str, CloudProvider] = {
     "pollinations": PollinationsProvider(),
     "cloudflare": CloudflareProvider(),
     "together": TogetherProvider(),
+    "gemini": GeminiProvider(),
+    "nebius": NebiusProvider(),
+    "huggingface": HuggingFaceProvider(),
 }
 
 

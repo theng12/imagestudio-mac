@@ -212,9 +212,27 @@
             </template>
           </select>
 
-          <!-- Per-model dependency warning -->
+          <!-- Cloud model whose API credential isn't configured -->
           <div class="banner warn dep-warn"
-               x-show="gen.repo && !isModelReady(gen.repo)"
+               x-show="gen.repo && selectedModel && selectedModel.is_cloud && selectedModel.cloud_credentials_ok === false"
+               x-cloak>
+            <div>
+              <strong>🔑 This cloud model needs an API key.</strong>
+              <p class="muted" x-text="(selectedModel && selectedModel.fit && selectedModel.fit.hint) || 'Add the required API credential in Settings to use this model.'"></p>
+              <p class="muted">
+                <template x-if="selectedModel && selectedModel.cloud_signup_url">
+                  <span><a class="link-accent" :href="selectedModel.cloud_signup_url" target="_blank" rel="noopener"
+                          x-text="'Get a ' + (selectedModel.cloud_provider_label || 'provider') + ' key ↗'"></a> ·
+                  </span>
+                </template>
+                Open <a class="link-accent" @click="tab='settings'">Settings</a> to add it — or switch to
+                <strong>Pollinations FLUX</strong> (cloud, no key needed) to generate right now.
+              </p>
+            </div>
+          </div>
+          <!-- Per-model dependency warning (LOCAL models only) -->
+          <div class="banner warn dep-warn"
+               x-show="gen.repo && !isModelReady(gen.repo) && !(selectedModel && selectedModel.is_cloud)"
                x-cloak>
             <div>
               <strong>This model needs additional packages.</strong>
@@ -955,23 +973,44 @@
                   <template x-for="c in (m.capabilities || [])" :key="c">
                     <span class="chip cap" :title="capabilityHint(c)" x-text="capabilityLabel(c)"></span>
                   </template>
-                  <!-- Engine status chip — 3 states: ready / deps-ok-but-not-wired / missing deps. -->
+                  <!-- LOCAL-engine status chip — 3 states: ready / deps-ok-but-not-wired / missing deps. -->
                   <span class="chip engine-ready"
-                        x-show="m.cache.state==='cached' && isModelReady(m.repo)"
+                        x-show="!m.is_cloud && m.cache.state==='cached' && isModelReady(m.repo)"
                         title="This model's engine is installed and wired up. Ready to generate.">
                     ✓ engine ready
                   </span>
                   <span class="chip engine-pending"
-                        x-show="m.cache.state==='cached' && !isModelReady(m.repo) && modelDepsOk(m.repo)"
+                        x-show="!m.is_cloud && m.cache.state==='cached' && !isModelReady(m.repo) && modelDepsOk(m.repo)"
                         title="Packages are installed, but the backend worker for this family isn't shipped yet. Coming in a future Phase.">
                     🕓 worker in roadmap
                   </span>
                   <span class="chip engine-missing"
-                        x-show="m.cache.state==='cached' && !modelDepsOk(m.repo)"
+                        x-show="!m.is_cloud && m.cache.state==='cached' && !modelDepsOk(m.repo)"
                         :title="'Missing packages: ' + (modelMissingDeps(m.repo) || []).join(', ') + '. Click for details.'"
                         @click="tab='generate'">
                     ⚠ engine needs install
                   </span>
+                  <!-- CLOUD readiness chip — runs in the cloud, so readiness is
+                       about the API credential, not local engine/deps. -->
+                  <span class="chip engine-ready"
+                        x-show="m.is_cloud && m.cloud_credentials_ok !== false"
+                        title="Runs in the cloud — ready to generate.">
+                    ☁ cloud ready
+                  </span>
+                  <span class="chip engine-missing"
+                        x-show="m.is_cloud && m.cloud_credentials_ok === false"
+                        :title="(m.fit && m.fit.hint) || 'Add the required API credential in Settings to use this cloud model.'"
+                        @click="tab='settings'">
+                    🔑 needs API key
+                  </span>
+                  <!-- Provider link — opens the provider's API page (where you get
+                       the key, or learn more for keyless Pollinations). Shown for
+                       every cloud model. -->
+                  <a class="chip provider-link"
+                     x-show="m.is_cloud && m.cloud_signup_url"
+                     :href="m.cloud_signup_url" target="_blank" rel="noopener" @click.stop
+                     :title="'Open ' + (m.cloud_provider_label || 'this provider') + ' — get your API key / learn more'"
+                     x-text="'via ' + (m.cloud_provider_label || 'cloud') + ' ↗'"></a>
                 </p>
                 <!-- ─── Collapsible details (v1.1.2) ─── -->
                 <!-- Cards default to compact; the toggle below expands to show
@@ -1437,6 +1476,76 @@
         <button class="ghost small" @click="cloudKeys.showTogether = !cloudKeys.showTogether"
                 x-text="cloudKeys.showTogether ? '🙈 Hide' : '👁 Show'"></button>
       </div>
+
+      <h3 style="margin:16px 0 4px;">Google AI Studio (Gemini)</h3>
+      <p class="muted">
+        Status:
+        <strong x-show="cloudKeys.gemini_api_key_set" class="ok-text">✓ Saved</strong>
+        <strong x-show="!cloudKeys.gemini_api_key_set" class="warn-text">Not set</strong>
+        <span x-show="cloudKeys.gemini_api_key_set" class="muted">
+          (<code x-text="cloudKeys.gemini_api_key_masked"></code>)
+        </span>
+      </p>
+      <details class="control-help">
+        <summary>How to get this (free, no card)</summary>
+        <ol class="primer-body" style="padding-left:18px">
+          <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="link-accent">aistudio.google.com/apikey</a> and sign in with a Google account.</li>
+          <li>Click <strong>Create API key</strong> and copy it.</li>
+          <li>Gemini 2.5 Flash Image ("Nano Banana") has a generous permanent free tier — no credit card.</li>
+        </ol>
+      </details>
+      <div class="form-row" style="margin-top:10px;">
+        <input :type="cloudKeys.showGemini ? 'text' : 'password'"
+               x-model="cloudKeys.gemini" placeholder="Google AI Studio API key"
+               autocomplete="off" spellcheck="false"
+               style="flex:1 1 280px; font-family:'JetBrains Mono', monospace; font-size:13px;" />
+        <button class="ghost small" @click="cloudKeys.showGemini = !cloudKeys.showGemini"
+                x-text="cloudKeys.showGemini ? '🙈 Hide' : '👁 Show'"></button>
+      </div>
+
+      <h3 style="margin:16px 0 4px;">Nebius AI Studio</h3>
+      <p class="muted">
+        Status:
+        <strong x-show="cloudKeys.nebius_api_key_set" class="ok-text">✓ Saved</strong>
+        <strong x-show="!cloudKeys.nebius_api_key_set" class="warn-text">Not set</strong>
+        <span x-show="cloudKeys.nebius_api_key_set" class="muted">
+          (<code x-text="cloudKeys.nebius_api_key_masked"></code>)
+        </span>
+      </p>
+      <details class="control-help">
+        <summary>How to get this (free trial credits, no card)</summary>
+        <ol class="primer-body" style="padding-left:18px">
+          <li>Sign up at <a href="https://studio.nebius.com/" target="_blank" rel="noopener" class="link-accent">studio.nebius.com</a> (new accounts get free trial credits).</li>
+          <li>Create an API key at <a href="https://studio.nebius.com/settings/api-keys" target="_blank" rel="noopener" class="link-accent">Settings → API Keys</a>.</li>
+          <li>Unlocks FLUX dev + SDXL — a quality step up from the free schnell-only options.</li>
+        </ol>
+      </details>
+      <div class="form-row" style="margin-top:10px;">
+        <input :type="cloudKeys.showNebius ? 'text' : 'password'"
+               x-model="cloudKeys.nebius" placeholder="Nebius API key"
+               autocomplete="off" spellcheck="false"
+               style="flex:1 1 280px; font-family:'JetBrains Mono', monospace; font-size:13px;" />
+        <button class="ghost small" @click="cloudKeys.showNebius = !cloudKeys.showNebius"
+                x-text="cloudKeys.showNebius ? '🙈 Hide' : '👁 Show'"></button>
+      </div>
+
+      <h3 style="margin:16px 0 4px;">Hugging Face</h3>
+      <p class="muted">
+        The <strong>Hugging Face (cloud)</strong> model reuses the
+        <strong>Hugging Face token</strong> you set above (no separate key). That
+        token must have the <strong>“Inference Providers”</strong> permission — a
+        download-only token gets a 403 at generate time. Status:
+        <strong x-show="settings.hf_token_set" class="ok-text">✓ Token set</strong>
+        <strong x-show="!settings.hf_token_set" class="warn-text">No token set</strong>.
+      </p>
+      <details class="control-help">
+        <summary>Need an inference-enabled token?</summary>
+        <ol class="primer-body" style="padding-left:18px">
+          <li>Create one at <a href="https://huggingface.co/settings/tokens/new?ownUserPermissions=inference.serverless.write&tokenType=fineGrained" target="_blank" rel="noopener" class="link-accent">huggingface.co → new token</a> (the link pre-selects the Inference Providers permission).</li>
+          <li>Paste it into the <strong>Hugging Face token</strong> field above and save.</li>
+          <li>Free users get a small monthly inference credit — best for light use.</li>
+        </ol>
+      </details>
 
       <div class="form-row" style="margin-top:14px;">
         <button class="primary" @click="saveCloudKeys()" :disabled="cloudKeys.busy">

@@ -917,6 +917,20 @@ input.num-input-wide { width: 130px; }
 .chip.engine-missing:hover {
   background: color-mix(in srgb, #ff8a65 32%, transparent);
 }
+/* Provider link chip — a quiet, outlined link (not a status) that opens the
+   cloud provider's API page. Underline-on-hover signals it navigates out. */
+.chip.provider-link {
+  color: var(--muted);
+  border-color: color-mix(in srgb, var(--muted) 35%, transparent);
+  background: transparent;
+  cursor: pointer;
+  text-decoration: none;
+}
+.chip.provider-link:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  text-decoration: underline;
+}
 .banner.warn.dep-warn { margin-top: 12px; }
 .dep-chip {
   display: inline-block;

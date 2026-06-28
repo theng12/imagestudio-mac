@@ -128,8 +128,10 @@ function studio() {
       cloudflare_account_id_set: false, cloudflare_account_id_masked: "",
       cloudflare_api_token_set: false,  cloudflare_api_token_masked: "",
       together_api_key_set: false,      together_api_key_masked: "",
-      cfAccount: "", cfToken: "", together: "",   // input fields (cleared after save)
-      showCfToken: false, showTogether: false,
+      gemini_api_key_set: false,        gemini_api_key_masked: "",
+      nebius_api_key_set: false,        nebius_api_key_masked: "",
+      cfAccount: "", cfToken: "", together: "", gemini: "", nebius: "",   // input fields (cleared after save)
+      showCfToken: false, showTogether: false, showGemini: false, showNebius: false,
       busy: false, message: "", messageKind: "info",
     },
 
@@ -664,6 +666,11 @@ function studio() {
     },
     isModelReady(repo) {
       if (!repo) return false;
+      // Cloud models have no local engine — readiness = required credential set.
+      // The backend reports cloud_credentials_ok (false for Cloudflare/Together
+      // when their key/token is missing; always true for Pollinations + local).
+      const m = (this.models || []).find(x => x.repo === repo);
+      if (m && m.is_cloud) return m.cloud_credentials_ok !== false;
       const e = this.modelEngine(repo);
       if (!e) return true;   // unknown engine → assume ready; API will 503 if not
       return !!e.ready;
@@ -962,7 +969,7 @@ function studio() {
         this.settings.hf_token_set = !!data.hf_token_set;
         this.settings.hf_token_masked = data.hf_token_masked || "";
         // Cloud provider key statuses (masked; never the raw values).
-        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key"]) {
+        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key", "gemini_api_key", "nebius_api_key"]) {
           this.cloudKeys[k + "_set"] = !!data[k + "_set"];
           this.cloudKeys[k + "_masked"] = data[k + "_masked"] || "";
         }
@@ -976,9 +983,13 @@ function studio() {
       const cf = (this.cloudKeys.cfAccount || "").trim();
       const cft = (this.cloudKeys.cfToken || "").trim();
       const tg = (this.cloudKeys.together || "").trim();
+      const gm = (this.cloudKeys.gemini || "").trim();
+      const nb = (this.cloudKeys.nebius || "").trim();
       if (cf)  body.cloudflare_account_id = cf;
       if (cft) body.cloudflare_api_token = cft;
       if (tg)  body.together_api_key = tg;
+      if (gm)  body.gemini_api_key = gm;
+      if (nb)  body.nebius_api_key = nb;
       if (Object.keys(body).length === 0) {
         this.cloudKeys.message = "Enter at least one key to save.";
         this.cloudKeys.messageKind = "error";
@@ -994,12 +1005,14 @@ function studio() {
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
-        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key"]) {
+        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key", "gemini_api_key", "nebius_api_key"]) {
           this.cloudKeys[k + "_set"] = !!data[k + "_set"];
           this.cloudKeys[k + "_masked"] = data[k + "_masked"] || "";
         }
         this.cloudKeys.cfAccount = ""; this.cloudKeys.cfToken = ""; this.cloudKeys.together = "";
+        this.cloudKeys.gemini = ""; this.cloudKeys.nebius = "";
         this.cloudKeys.showCfToken = false; this.cloudKeys.showTogether = false;
+        this.cloudKeys.showGemini = false; this.cloudKeys.showNebius = false;
         this.cloudKeys.message = "Saved. Cloud models using these providers can now generate.";
         this.cloudKeys.messageKind = "success";
         this.pushToast({ kind: "success", icon: "✓", title: "Cloud keys saved", body: "" });
@@ -1020,11 +1033,11 @@ function studio() {
         const r = await fetch("/api/settings", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ cloudflare_account_id: "", cloudflare_api_token: "", together_api_key: "" }),
+          body: JSON.stringify({ cloudflare_account_id: "", cloudflare_api_token: "", together_api_key: "", gemini_api_key: "", nebius_api_key: "" }),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
-        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key"]) {
+        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key", "gemini_api_key", "nebius_api_key"]) {
           this.cloudKeys[k + "_set"] = !!data[k + "_set"];
           this.cloudKeys[k + "_masked"] = data[k + "_masked"] || "";
         }
@@ -1732,6 +1745,7 @@ function studio() {
         tight:   "⚠ tight",
         risky:   "✗ may not fit",
         unknown: "? fit unknown",
+        needs_key: "🔑 needs key",   // cloud model whose API credential isn't set
       };
       return map[fit.state] || "";
     },

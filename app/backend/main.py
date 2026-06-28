@@ -119,6 +119,9 @@ class SettingsBody(BaseModel):
     cloudflare_account_id: Optional[str] = None
     cloudflare_api_token: Optional[str] = None
     together_api_key: Optional[str] = None
+    # v1.13.0 cloud providers.
+    gemini_api_key: Optional[str] = None
+    nebius_api_key: Optional[str] = None
 
 
 class TokenTestBody(BaseModel):
@@ -397,7 +400,8 @@ def update_settings_endpoint(body: SettingsBody) -> dict:
     unchanged."""
     if body.hf_token is not None:
         app_settings.set_hf_token(body.hf_token)
-    for key in ("cloudflare_account_id", "cloudflare_api_token", "together_api_key"):
+    for key in ("cloudflare_account_id", "cloudflare_api_token", "together_api_key",
+                "gemini_api_key", "nebius_api_key"):
         val = getattr(body, key)
         if val is not None:
             app_settings.set_value(key, val.strip())

@@ -10,6 +10,64 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.13.0] — 2026-06-29
+
+### Added — three new free / free-trial cloud providers
+
+Image Studio now ships **six** cloud (`provider: "cloud"`) models, up from three. All run through the same stdlib-only HTTP path (no extra deps, no `Install Generation` needed) and the same credential-gating + provider-link UI added in 1.12.0.
+
+| New model (`repo`) | Provider | Credential | What it adds |
+|---|---|---|---|
+| `gemini/gemini-2.5-flash-image` | Google AI Studio | `gemini_api_key` | **Nano Banana** — permanent free tier, **no credit card**, ~500 img/day. A non-FLUX/SD model family (strong photoreal + text-in-image). Output size is model-chosen; width/height + seed are ignored. |
+| `nebius/flux-dev` | Nebius AI Studio | `nebius_api_key` | **FLUX.1 dev** — a quality step up from the free schnell-only options. Honors width/height. Free trial credits, no card. |
+| `huggingface/flux-1-schnell` | Hugging Face | reuses **`hf_token`** | FLUX.1 schnell via HF Inference Providers, using the **same token you already set for downloads** (must have the *Inference Providers* permission). No new field. Small monthly free credit — a bring-your-own-token option. |
+
+- **New providers:** `app/backend/providers/{gemini,nebius,huggingface}.py`, registered in the providers registry. Endpoints + request shapes were validated live against each real API (a dummy key returns an auth error, not a 404/shape error).
+- **Settings:** new `gemini_api_key` / `nebius_api_key` fields (masked in `/api/settings`, entered in **Settings → Cloud provider keys**). Hugging Face needs no new field — it reads the existing HF token.
+- **Catalog:** each new model carries the full `fit` / `cloud_credentials_ok` / `cloud_provider_label` / `cloud_signup_url` contract, so they gate and link exactly like the existing cloud models. Because the HF model reuses `hf_token`, it reports ready as soon as a Hugging Face token is set.
+- **Errors are explicit:** a Hugging Face token without the *Inference Providers* permission returns a clear 403 hint; Gemini content blocks and Nebius/Together URL-vs-base64 responses are all handled.
+
+### Notes
+- MINOR — new model families, but **no new Python deps** (cloud path is stdlib `urllib`), so a plain **Update** is enough; no need to re-run *Install Generation*.
+
+---
+
+## [1.12.0] — 2026-06-28
+
+### Added — direct "get your key" links for every cloud provider
+
+Each cloud model now carries, in `GET /api/catalog`:
+- **`cloud_provider_label`** — the provider's display name (`"Pollinations"`, `"Cloudflare Workers AI"`, `"Together AI"`); null for local models.
+- **`cloud_signup_url`** — the page where the user gets that provider's credential (or learns about it, for keyless Pollinations); null for local models.
+
+In the UI:
+- Every cloud model card shows a quiet **via &lt;provider&gt; ↗** link that opens the provider's API page in a new tab.
+- The Generate-tab "needs an API key" banner now offers a direct **Get a &lt;provider&gt; key ↗** link alongside the "open Settings" link, so you can jump straight to the dashboard instead of hunting for it.
+- (The Settings page already had per-provider get-key links; those are unchanged.)
+
+### Fixed — cloud models no longer report "ready" without their API credential
+
+Cloud-proxied models reported `fit.state: "ok"` / "fits comfortably" and `cache.state: "cached"` regardless of whether their required credential was configured — so a user with no Together/Cloudflare key saw them as ready, picked one, and only hit the failure at generate time.
+
+**New machine-readable signal in `GET /api/catalog`** (per model):
+
+- **`cloud_credentials_ok`** (boolean) — `true` when the model's required credential is set; mirrors exactly what the provider checks before a request, so "ok" means "won't fail for a missing credential." Always `true` for **Pollinations** (needs none) and for all **local** models; `false` for **Cloudflare** / **Together** when their key/token is absent. Cloudflare needs *both* `account_id` + `api_token` — one alone stays `false`.
+- **`fit.state: "needs_key"`** + **`fit.hint`** (e.g. *"Add your Together API key in Settings to use this model."*) when a keyed cloud model's credential is missing — so consumers can gate off the existing `fit` object with no extra logic.
+
+`is_cloud` / `cloud_provider` / `cloud_model_id` are unchanged. `cache.state` stays `"cached"` for cloud models (they genuinely need no download) — readiness now flows through `cloud_credentials_ok` / `fit.state`.
+
+### Image Studio UI now honors it
+- Model cards show **☁ cloud ready** vs **🔑 needs API key** (click → Settings) instead of the local-engine chips, and the fit chip renders **🔑 needs key**.
+- A credential-less cloud model is no longer selectable-to-generate (`isModelReady` gates on `cloud_credentials_ok`); the Generate tab shows a "needs an API key — open Settings, or use Pollinations" banner instead of a misleading "install packages" one.
+
+### Alignment with Story Studio
+Story Studio consumes `GET /api/catalog` and treated every `is_cloud` model as ready. It can now gate on `cloud_credentials_ok` (or `fit.state === "needs_key"`) to show credential-missing cloud models as "needs API key" / unselectable. Pollinations remains always-available (no credential).
+
+### Notes
+- PATCH — additive API field + UI fix, no new deps. `Update`, then restart the server (or it auto-restarts on Update if running as the launchd service) so the backend reloads.
+
+---
+
 ## [1.11.0] — 2026-06-26
 
 ### Added — three more diffusers models (broadening the engine)

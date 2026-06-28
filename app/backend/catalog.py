@@ -294,6 +294,55 @@ FAMILIES: dict[str, Family] = {
             "4 steps. Runs on Together's servers — prompts leave this Mac."
         ),
     ),
+    "gemini": Family(
+        id="gemini",
+        label="Google AI Studio (cloud)",
+        summary=(
+            "Image generation with Google's Gemini 2.5 Flash Image ('Nano Banana'). "
+            "Generous permanent free tier (no credit card) — just a free Google AI "
+            "Studio API key (set it once in Settings → Cloud provider keys). A "
+            "different model family from the FLUX/SD providers."
+        ),
+        how_to_use=(
+            "Add your Google AI Studio API key in Settings, then pick the Gemini "
+            "model and generate. Output size is chosen by the model (~1024px) — the "
+            "width/height controls and seed are ignored. Stricter content filters "
+            "than the open models. Runs on Google's servers — prompts leave this Mac."
+        ),
+    ),
+    "nebius": Family(
+        id="nebius",
+        label="Nebius AI Studio (cloud)",
+        summary=(
+            "Image generation via Nebius AI Studio (OpenAI-compatible). New accounts "
+            "get free trial credits (no credit card) covering FLUX dev, FLUX schnell, "
+            "and SDXL. Needs a free Nebius API key (set it in Settings). FLUX dev is "
+            "a quality step up from the free schnell-only cloud options."
+        ),
+        how_to_use=(
+            "Add your Nebius API key in Settings, then pick the Nebius model and "
+            "generate. Honors width/height. FLUX dev gives higher quality than "
+            "schnell at the cost of more trial credit per image. Runs on Nebius' "
+            "servers — prompts leave this Mac."
+        ),
+    ),
+    "huggingface": Family(
+        id="huggingface",
+        label="Hugging Face (cloud)",
+        summary=(
+            "Image generation via Hugging Face Inference Providers. Uses the SAME "
+            "Hugging Face token you set for downloads — as long as that token has the "
+            "'Inference Providers' permission. Free users get only a small monthly "
+            "inference credit, so this is best as a bring-your-own-token option."
+        ),
+        how_to_use=(
+            "Set a Hugging Face token (Settings → Hugging Face token) that has the "
+            "'Inference Providers' permission, then pick the Hugging Face model and "
+            "generate. Honors width/height. The free monthly credit is small — for "
+            "heavy use, the other cloud providers go further. Runs on Hugging Face's "
+            "servers — prompts leave this Mac."
+        ),
+    ),
 }
 
 
@@ -956,6 +1005,71 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("avoid", "Private/sensitive prompts — they're sent to Together's servers"),
         ),
     ),
+    ModelEntry(
+        repo="gemini/gemini-2.5-flash-image",
+        label="Gemini 2.5 Flash Image — Google (cloud)",
+        family="gemini",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Google. Needs a free Google AI Studio API key (Settings).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="gemini",
+        cloud_model_id="gemini-2.5-flash-image",
+        best_for="Google's Gemini 2.5 Flash Image ('Nano Banana') with a genuinely generous permanent free tier (no credit card). A different model family from FLUX/SD — strong at photorealism, text rendering, and following complex instructions. Best free option by daily volume. Output size is model-chosen (~1024px); width/height + seed are ignored.",
+        use_cases=(
+            ("good",  "Highest free daily volume of the cloud options — no card needed"),
+            ("good",  "A non-FLUX/SD look — great for photoreal scenes and legible text in images"),
+            ("good",  "Macs without the GPU/memory for local models"),
+            ("weak",  "Fixed model-chosen output size — width/height + seed are ignored"),
+            ("weak",  "Stricter content filters than the open FLUX/SD models"),
+            ("avoid", "Private/sensitive prompts — they're sent to Google's servers"),
+        ),
+    ),
+    ModelEntry(
+        repo="nebius/flux-dev",
+        label="FLUX.1 dev — Nebius (cloud)",
+        family="nebius",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Nebius. Needs a free Nebius API key with trial credits (Settings).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="nebius",
+        cloud_model_id="black-forest-labs/flux-dev",
+        best_for="FLUX.1 [dev] on Nebius AI Studio — the quality step up from the free schnell-only cloud options, honoring width/height. New accounts get free trial credits (no credit card). Pick this when you want the best cloud FLUX quality and don't mind that it draws from trial credit.",
+        use_cases=(
+            ("good",  "Higher-quality cloud FLUX (dev, not just distilled schnell)"),
+            ("good",  "Honors width/height — aspect-ratio presets apply"),
+            ("good",  "Macs without the GPU/memory for local FLUX"),
+            ("weak",  "Runs on trial credits, not an unlimited free tier — dev costs more credit/image than schnell"),
+            ("weak",  "Requires a (free) Nebius API key in Settings"),
+            ("avoid", "Private/sensitive prompts — they're sent to Nebius' servers"),
+        ),
+    ),
+    ModelEntry(
+        repo="huggingface/flux-1-schnell",
+        label="FLUX.1 schnell — Hugging Face (cloud)",
+        family="huggingface",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Hugging Face. Uses your HF token (with Inference Providers permission).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="huggingface",
+        cloud_model_id="black-forest-labs/FLUX.1-schnell",
+        best_for="FLUX.1 [schnell] via Hugging Face Inference Providers, using the SAME Hugging Face token you already set for downloads (it must have the 'Inference Providers' permission). The free monthly inference credit is small, so this is a bring-your-own-token convenience option rather than a heavy-use free tier.",
+        use_cases=(
+            ("good",  "Reuses your existing Hugging Face token — nothing new to sign up for"),
+            ("good",  "Honors width/height — aspect-ratio presets apply"),
+            ("weak",  "Free monthly inference credit is small — runs out quickly under heavy use"),
+            ("weak",  "Token must have the 'Inference Providers' permission (a download-only token gives a 403)"),
+            ("avoid", "Private/sensitive prompts — they're sent to Hugging Face's servers"),
+        ),
+    ),
 )
 
 
@@ -974,6 +1088,37 @@ def serialize_model(m: ModelEntry) -> dict:
         fit = system_info.fit_for(m.min_unified_memory_gb)
     except Exception:
         fit = None
+
+    # ── Cloud-credential readiness (v1.11.x) ────────────────────────────────
+    # A cloud model is only truly "ready" when its required API credential is
+    # configured. Local models need no cloud credential → always ok. For a
+    # keyed cloud model with the credential MISSING we (a) report
+    # cloud_credentials_ok=false (the machine-readable signal Story Studio and
+    # any other consumer gate on) and (b) override the hardware `fit` verdict to
+    # state="needs_key" so the existing fit chip surfaces it with no extra UI
+    # logic. Pollinations needs no key → always ok.
+    cloud_credentials_ok = True
+    cloud_provider_label = None
+    cloud_signup_url = None
+    if m.is_cloud:
+        try:
+            from . import settings
+            cloud_provider_label = settings.cloud_provider_label(m.cloud_provider)
+            cloud_signup_url = settings.cloud_signup_url(m.cloud_provider) or None
+            cloud_credentials_ok = settings.cloud_credentials_ok(m.cloud_provider)
+            if not cloud_credentials_ok:
+                fit = {
+                    "state": "needs_key",
+                    "label": "Needs API key",
+                    "hint": settings.cloud_credentials_hint(m.cloud_provider),
+                    "actual_gb": None,
+                    "required_gb": None,
+                }
+        except Exception:
+            # If settings can't be read for any reason, fail safe to not-ready
+            # for keyed providers (so we never falsely claim ready).
+            cloud_credentials_ok = (m.cloud_provider == "pollinations")
+
     return {
         "repo": m.repo,
         "label": m.label,
@@ -997,6 +1142,16 @@ def serialize_model(m: ModelEntry) -> dict:
         "cloud_provider": m.cloud_provider,
         "cloud_model_id": m.cloud_model_id,
         "is_cloud": m.is_cloud,
+        # New (v1.11.x) — true when the model's required cloud credential is set.
+        # Always true for local models and Pollinations (no key needed); false
+        # for Cloudflare/Together when their key/token is absent. Downstream
+        # consumers (Story Studio) gate cloud-model readiness on this.
+        "cloud_credentials_ok": cloud_credentials_ok,
+        # New (v1.12.0) — provider display name ("Together AI") + the URL where a
+        # user gets the credential, so the UI can link straight from the
+        # "needs API key" state. Null for local models.
+        "cloud_provider_label": cloud_provider_label,
+        "cloud_signup_url": cloud_signup_url,
         # New in v1.9.0 — local inference engine (mflux vs diffusers).
         "engine": m.engine,
         "is_diffusers": m.is_diffusers,
