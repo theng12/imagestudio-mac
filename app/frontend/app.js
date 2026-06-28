@@ -668,9 +668,56 @@ function studio() {
     historyPage: 0,
     historyPageSize: 12,   // 4 cols × 3 rows in the image grid feels right
     get historyJobs() {
+      // ALL finished results, newest-first — including the one currently shown
+      // in the main view. (Previously this sliced off the newest, which made it
+      // unreachable once you clicked an older tile.) The grid highlights whichever
+      // one is currently open and badges the newest.
       return (this.gen.jobs || [])
-        .filter(j => j.state === "done" || j.state === "error" || j.state === "cancelled")
-        .slice(1);
+        .filter(j => j.state === "done" || j.state === "error" || j.state === "cancelled");
+    },
+    /** Newest finished result (history is newest-first). */
+    get newestJob() {
+      return (this.historyJobs || [])[0] || null;
+    },
+    /** True when the main view is showing the newest result (or a still-running
+     *  job, or nothing) — i.e. there's nothing newer to jump back to. */
+    get isViewingNewest() {
+      const cur = this.gen.currentJob;
+      if (!cur) return true;
+      if (!["done", "error", "cancelled"].includes(cur.state)) return true; // running/queued
+      return !this.newestJob || cur.id === this.newestJob.id;
+    },
+    /** Jump the main view back to the latest result. */
+    backToLatest() {
+      const n = this.newestJob || (this.gen.jobs || [])[0];
+      if (n) { this.gen.currentJob = n; this.historyPage = 0; }
+    },
+    /** Open a specific job in the main view (and page the grid to it). */
+    viewJob(job) {
+      if (job) this.gen.currentJob = job;
+    },
+    copyPrompt(job) {
+      const p = job?.params?.prompt || "";
+      if (!p) return;
+      this.copyText(p);
+      this.pushToast({ kind: "success", icon: "📋", title: "Prompt copied", body: "" });
+    },
+    /** Relative "finished N ago" label for a job. */
+    jobTimeLabel(job) {
+      const t = job?.finished_at || job?.started_at;
+      if (!t) return "";
+      const diff = (Date.now() / 1000) - t;
+      if (diff < 45) return "just now";
+      if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+      if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+      return Math.floor(diff / 86400) + "d ago";
+    },
+    /** Provider label for a cloud job, else the local engine label. */
+    jobProviderLabel(job) {
+      const repo = job?.params?.repo;
+      const m = (this.models || []).find(x => x.repo === repo);
+      if (m?.is_cloud) return m.cloud_provider_label || "cloud";
+      return null;
     },
     get historyPageCount() {
       return Math.max(1, Math.ceil(this.historyJobs.length / this.historyPageSize));

@@ -10,6 +10,25 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.16.0] — 2026-06-29
+
+### Changed — reworked the image history / result view
+
+The Generate-tab result + history area was hard to navigate and showed almost nothing. Overhauled:
+
+**Fixed the core navigation bug.** The history grid used to drop the newest result (it assumed the newest was always the one on screen), so once you clicked an older thumbnail there was **no way back to the latest**. The grid now shows **every** finished result (newest included), badges the newest, highlights whichever one is open, and a **"👁 You're viewing an earlier result · ← Back to latest"** bar (plus a "← Latest" link in the history header) jumps you straight back.
+
+**The prompt is now front-and-centre.** The selected result shows its full **prompt** in a dedicated, scrollable block with a **Copy** button (and the negative prompt when present) — instead of being buried in a collapsed JSON blob. A **Copy prompt** action was added to the button row too.
+
+**Much richer detail.** The result header now shows the **model**, a **provider** pill for cloud models, and a relative **timestamp** ("32m ago"); a row of detail chips shows **Size · Seed · Steps · Guidance · Time**. Errors render inline in red.
+
+**Better history thumbnails.** Bigger tiles, each with a gradient overlay showing the **prompt snippet + model + duration**, a **NEWEST** badge, per-tile state badges (e.g. ERROR), an active-highlight, and a hover "reuse" button. Click a tile to open it in the main view.
+
+### Note
+- PATCH-level UI rework, **frontend only, no new deps** — just **Update** (static files reload on refresh). Verified live in a browser (desktop): navigation, prompt display, detail chips, and the badged grid all render with no console errors.
+
+---
+
 ## [1.15.0] — 2026-06-29
 
 ### Added — per-model dimension capability (exposed to Story Studio) + more aspect ratios

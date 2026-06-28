@@ -614,22 +614,61 @@
         </div>
 
         <div class="output-meta" x-show="gen.currentJob" x-cloak>
-          <div class="meta-row">
+
+          <!-- "Viewing an earlier result" bar — clear way back to the latest -->
+          <div class="viewing-older" x-show="!isViewingNewest" x-cloak>
+            <span>👁 You're viewing an earlier result.</span>
+            <button class="btn small primary" @click="backToLatest()">← Back to latest</button>
+          </div>
+
+          <!-- Header: state · model · provider · when -->
+          <div class="meta-row result-head">
             <span class="chip" :class="genStateChipClass(gen.currentJob?.state)" x-text="gen.currentJob?.state"></span>
-            <span class="meta-item" x-show="gen.currentJob?.state==='running'">
-              <small x-text="genProgressLabel()"></small>
-            </span>
-            <span class="meta-item" x-show="gen.currentJob">
-              <small x-text="'⏱ ' + formatDuration(elapsedFor(gen.currentJob))"></small>
-            </span>
-            <span class="meta-item" x-show="gen.currentJob?.params?.width">
-              <small x-text="gen.currentJob?.params?.width + ' × ' + gen.currentJob?.params?.height"></small>
-            </span>
-            <span class="meta-item" x-show="gen.currentJob?.resolved_seed != null">
-              <small>seed:&nbsp;<code x-text="gen.currentJob?.resolved_seed"></code></small>
-            </span>
+            <strong class="result-model" x-text="historyModelLabel(gen.currentJob)"></strong>
+            <span class="chip cloud-pill" x-show="jobProviderLabel(gen.currentJob)"
+                  x-text="'☁ ' + jobProviderLabel(gen.currentJob)"></span>
+            <span class="muted small" x-show="gen.currentJob?.state==='running'" x-text="genProgressLabel()"></span>
+            <span class="muted small" x-show="gen.currentJob?.finished_at && gen.currentJob?.state!=='running'"
+                  x-text="jobTimeLabel(gen.currentJob)"></span>
             <button class="link danger" x-show="gen.currentJob?.state==='running'"
                     @click="cancelGenerate(gen.currentJob?.id)">Cancel</button>
+          </div>
+
+          <!-- Error detail -->
+          <div class="result-error" x-show="gen.currentJob?.state==='error'" x-text="gen.currentJob?.error"></div>
+
+          <!-- Prompt — always visible, scrolls if long -->
+          <div class="result-prompt-block" x-show="gen.currentJob?.params?.prompt">
+            <div class="result-prompt-head">
+              <label>Prompt</label>
+              <button class="ghost xsmall" @click="copyPrompt(gen.currentJob)" title="Copy the prompt">📋 Copy</button>
+            </div>
+            <div class="result-prompt" x-text="gen.currentJob?.params?.prompt"></div>
+            <template x-if="gen.currentJob?.params?.negative_prompt">
+              <div class="result-neg">
+                <span class="result-neg-label">Negative</span>
+                <span x-text="gen.currentJob?.params?.negative_prompt"></span>
+              </div>
+            </template>
+          </div>
+
+          <!-- Detail chips -->
+          <div class="result-details" x-show="gen.currentJob?.params">
+            <span class="detail" x-show="gen.currentJob?.params?.width">
+              <span class="detail-k">Size</span><span class="detail-v" x-text="gen.currentJob.params.width + '×' + gen.currentJob.params.height"></span>
+            </span>
+            <span class="detail" x-show="gen.currentJob?.resolved_seed != null">
+              <span class="detail-k">Seed</span><span class="detail-v" x-text="gen.currentJob.resolved_seed"></span>
+            </span>
+            <span class="detail" x-show="gen.currentJob?.params?.steps != null">
+              <span class="detail-k">Steps</span><span class="detail-v" x-text="gen.currentJob.params.steps"></span>
+            </span>
+            <span class="detail" x-show="gen.currentJob?.params?.guidance != null">
+              <span class="detail-k">Guidance</span><span class="detail-v" x-text="gen.currentJob.params.guidance"></span>
+            </span>
+            <span class="detail" x-show="gen.currentJob?.duration_seconds != null">
+              <span class="detail-k">Time</span><span class="detail-v" x-text="formatDuration(gen.currentJob.duration_seconds)"></span>
+            </span>
           </div>
 
           <div class="result-actions" x-show="gen.currentJob?.state==='done' && gen.currentJob?.output_url">
@@ -638,12 +677,13 @@
                :download="downloadFilename(gen.currentJob)"
                title="Save the PNG to your computer">⬇ Download</a>
             <button class="ghost small" @click="reuseParams(gen.currentJob)" title="Copy these settings back into the form">🔄 Reuse params</button>
+            <button class="ghost small" x-show="gen.currentJob?.params?.prompt" @click="copyPrompt(gen.currentJob)" title="Copy just the prompt text">📋 Copy prompt</button>
             <button class="ghost small" @click="copyImageUrl(gen.currentJob)" title="Copy the image URL to clipboard">🔗 Copy URL</button>
             <button class="ghost small" x-show="gen.currentJob?.output_path" @click="revealInFolder(gen.currentJob.output_path)" title="Open this image in Finder">📂 Reveal</button>
           </div>
 
           <details class="meta-details" x-show="gen.currentJob?.params">
-            <summary>Parameters used</summary>
+            <summary>Raw parameters</summary>
             <pre x-text="JSON.stringify(gen.currentJob?.params, null, 2)"></pre>
           </details>
         </div>
@@ -651,26 +691,37 @@
         <div class="recent-jobs" x-show="historyJobs.length > 0">
           <div class="recent-head">
             <h3>
-              Recent
+              History
               <span class="muted small" x-text="'(' + historyJobs.length + ')'"></span>
             </h3>
-            <button class="link small" @click="clearHistory()" title="Delete all past jobs from this list">Clear history</button>
+            <div class="recent-head-actions">
+              <button class="link small" x-show="!isViewingNewest" @click="backToLatest()" title="Jump back to the most recent result">← Latest</button>
+              <button class="link small" @click="clearHistory()" title="Delete all past jobs from this list">Clear</button>
+            </div>
           </div>
           <div class="recent-grid">
             <template x-for="j in pagedHistoryJobs" :key="j.id">
               <div class="recent-tile"
                    :class="{active: gen.currentJob?.id === j.id}"
-                   @click="gen.currentJob = j"
-                   :title="(recentTileTitle ? recentTileTitle(j) : '') + '\n' + historyModelLabel(j) + (historyParamsLabel(j) ? ' · ' + historyParamsLabel(j) : '')">
+                   @click="viewJob(j)"
+                   :title="recentTileTitle(j)">
                 <template x-if="j.output_url">
-                  <img :src="j.output_url + '?t=' + j.id" alt="" />
+                  <img :src="j.output_url + '?t=' + j.id" alt="" loading="lazy" />
                 </template>
                 <template x-if="!j.output_url">
                   <div class="recent-empty" x-text="j.state"></div>
                 </template>
-                <span class="tile-duration"
-                      x-show="j.duration_seconds != null"
-                      x-text="'⏱ ' + formatDuration(j.duration_seconds)"></span>
+                <!-- newest / non-done badges -->
+                <span class="tile-badge tile-badge-new" x-show="newestJob && j.id === newestJob.id">newest</span>
+                <span class="tile-badge tile-badge-state" x-show="j.state !== 'done'" x-text="j.state"></span>
+                <!-- prompt + model overlay (always legible at the bottom) -->
+                <div class="tile-overlay">
+                  <div class="tile-prompt" x-text="j.params?.prompt || '(no prompt)'"></div>
+                  <div class="tile-sub">
+                    <span x-text="historyModelLabel(j)"></span>
+                    <span x-show="j.duration_seconds != null" x-text="' · ⏱ ' + formatDuration(j.duration_seconds)"></span>
+                  </div>
+                </div>
                 <button class="tile-reuse"
                         x-show="j.state==='done' && j.params"
                         @click.stop="reuseParams(j)"
