@@ -145,16 +145,23 @@ curl -N http://<server>:<port>/api/downloads/stream
 
 Most models in Image Studio KH run **locally** on Apple Silicon via mflux/MLX.
 A second class of model — catalog entries with `provider: "cloud"` — generates
-on a hosted API instead. There are six, all free or free-trial:
+on a hosted API instead. There are **twelve**, all free or free-trial, spanning
+several model families (FLUX, SDXL, SD3, NVIDIA Sana, Leonardo, Gemini):
 
-| Model (`repo`) | Provider | Key needed? | Notes |
+| Model (`repo`) | Provider | Key needed? | Family / notes |
 |---|---|---|---|
-| `pollinations/flux` | Pollinations | **None** | Zero-setup; fixed best-effort service |
-| `cloudflare/flux-1-schnell` | Cloudflare Workers AI | Account ID + API token | Free tier 10k neurons/day; **fixed output size** |
-| `together/flux-1-schnell-free` | Together AI | API key | Free schnell endpoint; honors width/height, 4 steps |
-| `gemini/gemini-2.5-flash-image` | Google AI Studio | API key | Permanent free tier, **no card**; ~500 img/day; non-FLUX model; **fixed output size + seed ignored** |
-| `nebius/flux-dev` | Nebius AI Studio | API key | Free **trial credits**, no card; **FLUX dev** quality; honors width/height |
-| `huggingface/flux-1-schnell` | Hugging Face | Reuses your **HF token** | Token needs the **Inference Providers** permission; small monthly free credit |
+| `pollinations/flux` | Pollinations | **None** | **NVIDIA Sana** — zero-setup, no key; anon tier serves Sana |
+| `cloudflare/flux-1-schnell` | Cloudflare Workers AI | Account ID + API token | FLUX schnell; free 10k neurons/day; **fixed output size** |
+| `cloudflare/leonardo-lucid-origin` | Cloudflare Workers AI | Account ID + API token | **Leonardo Lucid** (non-FLUX/SD); photoreal; honors width/height |
+| `cloudflare/leonardo-phoenix` | Cloudflare Workers AI | Account ID + API token | **Leonardo Phoenix** (non-FLUX/SD); strong prompt adherence |
+| `cloudflare/sdxl-base` | Cloudflare Workers AI | Account ID + API token | **SDXL 1.0**; free; honors width/height + negative prompt |
+| `cloudflare/sdxl-lightning` | Cloudflare Workers AI | Account ID + API token | **SDXL-Lightning**; fastest free CF model (few-step) |
+| `cloudflare/dreamshaper-lcm` | Cloudflare Workers AI | Account ID + API token | **DreamShaper 8 LCM** (SD1.5); stylized/illustrative |
+| `together/flux-1-schnell-free` | Together AI | API key | FLUX schnell; free endpoint; honors width/height, 4 steps |
+| `gemini/gemini-2.5-flash-image` | Google AI Studio | API key | **Gemini Nano Banana** (non-FLUX/SD); free ~500/day, **no card**; fixed size + seed ignored |
+| `nebius/flux-dev` | Nebius AI Studio | API key | **FLUX dev** quality; free trial credits, no card; honors width/height |
+| `huggingface/flux-1-schnell` | Hugging Face | Reuses your **HF token** | FLUX schnell; token needs **Inference Providers** permission |
+| `huggingface/sd3-medium` | Hugging Face | Reuses your **HF token** | **Stable Diffusion 3 Medium**; better text/prompt adherence |
 
 Keys for the keyed providers are entered once in **Settings → Cloud provider
 keys** (stored in `app/backend/settings.json`, gitignored, sent only to that

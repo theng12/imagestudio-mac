@@ -10,6 +10,36 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.14.0] — 2026-06-29
+
+### Added — six more free cloud models (variety beyond FLUX/SD), now 12 total
+
+The catalog now ships **twelve** cloud models across several families. Researched the genuinely-free rosters of all six providers (mid-2026) and added the ones that are actually free — prioritizing **non-FLUX/SD** families. (Qwen-Image, Imagen, Ideogram, Kolors, HiDream, Seedream are all paid/credit-gated now, so they were deliberately **not** added — no broken "free" entries.)
+
+**New models** (no new providers, no new deps — all reuse the existing stdlib HTTP path):
+
+| `repo` | Provider | Family | Credential |
+|---|---|---|---|
+| `cloudflare/leonardo-lucid-origin` | Cloudflare | **Leonardo Lucid** (non-FLUX/SD, photoreal) | Cloudflare key |
+| `cloudflare/leonardo-phoenix` | Cloudflare | **Leonardo Phoenix** (non-FLUX/SD, prompt adherence) | Cloudflare key |
+| `cloudflare/sdxl-base` | Cloudflare | **SDXL 1.0** (free; honors width/height + negative prompt) | Cloudflare key |
+| `cloudflare/sdxl-lightning` | Cloudflare | **SDXL-Lightning** (fastest free CF model) | Cloudflare key |
+| `cloudflare/dreamshaper-lcm` | Cloudflare | **DreamShaper 8 LCM** (SD1.5, stylized) | Cloudflare key |
+| `huggingface/sd3-medium` | Hugging Face | **Stable Diffusion 3 Medium** | reuses `hf_token` |
+
+### Changed — Cloudflare provider generalized; Pollinations relabelled to Sana
+
+- **Cloudflare provider** now serves any of its text-to-image models (not just FLUX schnell). It builds the right body per model (FLUX = `prompt`+`steps`, fixed size; the SD/Leonardo models honor `width`/`height`/`num_steps`/`seed`, and `negative_prompt` where supported — Leonardo Lucid omits it) and decodes **both** response shapes: base64-in-JSON (FLUX schnell, Leonardo Lucid) and raw image bytes (SDXL, Lightning, DreamShaper, Phoenix). Model IDs + response shapes verified against Cloudflare's docs.
+- **`pollinations/flux` relabelled** to "Pollinations (cloud, free — no key)" with `cloud_model_id: "sana"`. Pollinations' free anonymous tier now serves **only NVIDIA Sana** — `model=flux`/`turbo`/`sana` all return the byte-identical image (verified live) — so the entry now honestly reflects that it's Sana. The `repo` id stays `pollinations/flux` for stability (consumers reference it).
+
+### Verification
+- All 12 cloud models report correctly in `/api/catalog`. New endpoints + request/response shapes validated live (dummy key → auth error, not a 404/shape error; Cloudflare slugs confirmed against docs). A real end-to-end generation through the **Pollinations (Sana)** pipeline returned a valid JPEG.
+
+### Notes
+- MINOR — new model families, **no new Python deps** (cloud path is stdlib `urllib`). A plain **Update** is enough.
+
+---
+
 ## [1.13.0] — 2026-06-29
 
 ### Added — three new free / free-trial cloud providers

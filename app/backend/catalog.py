@@ -274,10 +274,11 @@ FAMILIES: dict[str, Family] = {
         ),
         how_to_use=(
             "Add your Cloudflare Account ID + API token in Settings, then pick a "
-            "Cloudflare model and generate. FLUX.1 schnell runs in 1-8 steps. The "
-            "Workers AI schnell endpoint outputs a fixed size (it ignores the "
-            "width/height controls). Runs on Cloudflare's servers — prompts leave "
-            "this Mac."
+            "Cloudflare model and generate. Several models share the free "
+            "10k-neuron/day quota: FLUX.1 schnell (fast, but fixed output size — it "
+            "ignores the width/height controls), plus SDXL, SDXL-Lightning, "
+            "DreamShaper, and Leonardo Lucid/Phoenix, which DO honor width/height. "
+            "Runs on Cloudflare's servers — prompts leave this Mac."
         ),
     ),
     "together": Family(
@@ -941,9 +942,13 @@ CATALOG: tuple[ModelEntry, ...] = (
     # synthetic stable id (never fetched from HF); /api/catalog synthesises a
     # "cached" cache state so the UI shows them ready with no download button.
     # Excluded from audit_truth.py (it audits mflux wiring only).
+    # NOTE: `repo` stays "pollinations/flux" as a stable id (consumers like Story
+    # Studio reference it), but Pollinations' free anonymous tier now serves only
+    # NVIDIA Sana — the `model` param is normalised to it regardless of value — so
+    # the label + cloud_model_id reflect that reality instead of claiming FLUX.
     ModelEntry(
         repo="pollinations/flux",
-        label="Pollinations FLUX (cloud, free)",
+        label="Pollinations (cloud, free — no key)",
         family="pollinations",
         size_gb=0.0,
         gated=False,
@@ -952,12 +957,12 @@ CATALOG: tuple[ModelEntry, ...] = (
         capabilities=("txt2img",),
         provider="cloud",
         cloud_provider="pollinations",
-        cloud_model_id="flux",
-        best_for="Zero-setup free image generation in the cloud — no download, no API key, no local GPU. Great for trying the app instantly or generating on a Mac that can't run the local MLX models. Your prompt is sent to Pollinations' servers.",
+        cloud_model_id="sana",
+        best_for="Zero-setup free image generation in the cloud — no download, no API key, no local GPU. Pollinations' free anonymous tier currently serves NVIDIA Sana, a fast and compact non-FLUX/SD model. Great for trying the app instantly or generating on a Mac that can't run the local MLX models. Your prompt is sent to Pollinations' servers.",
         use_cases=(
-            ("good",  "Instant first generation — nothing to download or install"),
-            ("good",  "Macs without the memory/GPU for local FLUX (8 GB, Intel, etc.)"),
-            ("good",  "Quick throwaway concepts where local/offline isn't needed"),
+            ("good",  "Instant first generation — nothing to download, install, or sign up for"),
+            ("good",  "A free non-FLUX/SD model (NVIDIA Sana) with zero setup"),
+            ("good",  "Macs without the memory/GPU for local models (8 GB, Intel, etc.)"),
             ("weak",  "Variable latency + rate limits — it's a free shared service"),
             ("avoid", "Private or sensitive prompts — they leave your Mac for a 3rd-party server"),
             ("avoid", "Reproducible/seed-locked pipelines — cloud output is best-effort, not deterministic"),
@@ -1067,6 +1072,133 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("good",  "Honors width/height — aspect-ratio presets apply"),
             ("weak",  "Free monthly inference credit is small — runs out quickly under heavy use"),
             ("weak",  "Token must have the 'Inference Providers' permission (a download-only token gives a 403)"),
+            ("avoid", "Private/sensitive prompts — they're sent to Hugging Face's servers"),
+        ),
+    ),
+    # ── More free cloud models (v1.14.0) — variety beyond FLUX/SD ──
+    ModelEntry(
+        repo="cloudflare/leonardo-lucid-origin",
+        label="Leonardo Lucid Origin — Cloudflare (cloud)",
+        family="cloudflare",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="cloudflare",
+        cloud_model_id="@cf/leonardo/lucid-origin",
+        best_for="Leonardo's Lucid Origin on Cloudflare's free tier — a non-FLUX/SD model family known for sharp, photoreal results and strong prompt adherence. Honors width/height (up to 2500px). A genuinely different look from the FLUX/SD cloud options, with no signup beyond the Cloudflare key you already use.",
+        use_cases=(
+            ("good",  "A distinct, non-FLUX/SD look — photoreal, crisp detail"),
+            ("good",  "Free on Cloudflare's 10k-neuron/day quota; honors width/height"),
+            ("good",  "Macs without the GPU/memory for local models"),
+            ("weak",  "Shares the Cloudflare daily free quota with the other CF models"),
+            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
+        ),
+    ),
+    ModelEntry(
+        repo="cloudflare/leonardo-phoenix",
+        label="Leonardo Phoenix 1.0 — Cloudflare (cloud)",
+        family="cloudflare",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="cloudflare",
+        cloud_model_id="@cf/leonardo/phoenix-1.0",
+        best_for="Leonardo's Phoenix 1.0 on Cloudflare's free tier — a non-FLUX/SD model with excellent prompt adherence and coherent compositions, including legible in-image text. Honors width/height and a negative prompt. Pairs well with Lucid Origin for a different aesthetic from the FLUX/SD options.",
+        use_cases=(
+            ("good",  "Strong prompt adherence + coherent layouts (good with text in images)"),
+            ("good",  "Non-FLUX/SD family, free on Cloudflare; honors width/height + negative prompt"),
+            ("good",  "Macs without the GPU/memory for local models"),
+            ("weak",  "Shares the Cloudflare daily free quota with the other CF models"),
+            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
+        ),
+    ),
+    ModelEntry(
+        repo="cloudflare/sdxl-base",
+        label="Stable Diffusion XL 1.0 — Cloudflare (cloud)",
+        family="cloudflare",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="cloudflare",
+        cloud_model_id="@cf/stabilityai/stable-diffusion-xl-base-1.0",
+        best_for="Stable Diffusion XL 1.0 on Cloudflare's free tier — the classic SDXL base model, free, and (unlike the Cloudflare FLUX schnell endpoint) it honors width/height and a negative prompt. Good for SDXL-style results and custom aspect ratios in the cloud without a Together/Nebius key.",
+        use_cases=(
+            ("good",  "Free SDXL that honors width/height + negative prompt"),
+            ("good",  "Custom aspect ratios in the cloud without a Together/Nebius key"),
+            ("good",  "Macs without the GPU/memory for local models"),
+            ("weak",  "Classic SDXL — less sharp than FLUX/Leonardo on fine detail"),
+            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
+        ),
+    ),
+    ModelEntry(
+        repo="cloudflare/sdxl-lightning",
+        label="SDXL-Lightning — Cloudflare (cloud)",
+        family="cloudflare",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="cloudflare",
+        cloud_model_id="@cf/bytedance/stable-diffusion-xl-lightning",
+        best_for="ByteDance's SDXL-Lightning on Cloudflare's free tier — a distilled SDXL that produces images in just a few steps, so it's the fastest free Cloudflare option. Honors width/height. Great for rapid drafts and iterating on prompts.",
+        use_cases=(
+            ("good",  "Fastest free Cloudflare model — few-step distilled SDXL"),
+            ("good",  "Rapid drafting / prompt iteration; honors width/height"),
+            ("good",  "Macs without the GPU/memory for local models"),
+            ("weak",  "Few-step output trades some quality for speed"),
+            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
+        ),
+    ),
+    ModelEntry(
+        repo="cloudflare/dreamshaper-lcm",
+        label="DreamShaper 8 LCM — Cloudflare (cloud)",
+        family="cloudflare",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="cloudflare",
+        cloud_model_id="@cf/lykon/dreamshaper-8-lcm",
+        best_for="Lykon's DreamShaper 8 (LCM) on Cloudflare's free tier — a popular Stable Diffusion 1.5 finetune with a stylized, illustrative, slightly painterly look. Fast (LCM, few steps) and honors width/height. A different aesthetic from the photoreal FLUX/SDXL/Leonardo options.",
+        use_cases=(
+            ("good",  "Stylized / illustrative / painterly look (SD 1.5 DreamShaper)"),
+            ("good",  "Fast few-step LCM; free on Cloudflare; honors width/height"),
+            ("weak",  "SD 1.5 base — lower native resolution/detail than SDXL/FLUX"),
+            ("avoid", "Photoreal or text-in-image needs — pick Leonardo/SDXL/FLUX instead"),
+            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
+        ),
+    ),
+    ModelEntry(
+        repo="huggingface/sd3-medium",
+        label="Stable Diffusion 3 Medium — Hugging Face (cloud)",
+        family="huggingface",
+        size_gb=0.0,
+        gated=False,
+        min_unified_memory_gb=0,
+        recommended_hardware="None — runs on Hugging Face. Uses your HF token (with Inference Providers permission).",
+        capabilities=("txt2img",),
+        provider="cloud",
+        cloud_provider="huggingface",
+        cloud_model_id="stabilityai/stable-diffusion-3-medium-diffusers",
+        best_for="Stable Diffusion 3 Medium via Hugging Face Inference Providers, using the same HF token you set for downloads (it must have the 'Inference Providers' permission). SD3's architecture differs from SDXL — better text rendering and prompt adherence. Free on the small HF monthly credit, so best for light use.",
+        use_cases=(
+            ("good",  "SD3 (newer architecture than SDXL) — better text + prompt adherence"),
+            ("good",  "Reuses your existing Hugging Face token; honors width/height"),
+            ("weak",  "Free monthly HF inference credit is small — light use only"),
+            ("weak",  "Token must have the 'Inference Providers' permission (else a 403)"),
             ("avoid", "Private/sensitive prompts — they're sent to Hugging Face's servers"),
         ),
     ),
