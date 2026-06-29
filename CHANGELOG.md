@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.17.2] — 2026-06-29
+
+### Fixed — generated-image preview collapsed to a tiny strip
+
+The Generate-tab output column is a sticky flex column with the result panel + history below the image. After the 1.16 history rework added more content below it, the preview frame (default `flex-shrink: 1`) got squashed to fit — the image rendered as a ~40px-tall sliver.
+
+- `.output-frame` now has `flex-shrink: 0` so it keeps its full aspect-ratio height and fills the column width (with a `max-height: 72vh` bound so tall portraits don't overflow the viewport — the column scrolls past them).
+- `outputFrameStyle` now uses the **displayed job's** dimensions (not the form's), so the frame matches the aspect ratio of the image actually on screen.
+
+Verified live: a 1344×768 result now renders at 540×308 (full column width) instead of ~40px tall.
+
+### Note
+- PATCH — frontend only, no new deps. Just **Update** (hard-refresh the page).
+
+---
+
 ## [1.17.1] — 2026-06-29
 
 ### Fixed — "Install/Reinstall Generation" was unreachable once the startup service was installed

@@ -591,6 +591,12 @@ input.num-input-wide { width: 130px; }
 
 .output-frame {
   width: 100%;
+  /* Don't let the flex column shrink the preview to fit the meta/history below
+     it — keep the full aspect-ratio height so the image fills the width. */
+  flex-shrink: 0;
+  /* Bound very tall (portrait) images so they don't overflow the viewport; the
+     sticky column scrolls past them. Landscape/square fill the width naturally. */
+  max-height: 72vh;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 8px;

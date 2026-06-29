@@ -797,8 +797,11 @@ function studio() {
     },
 
     get outputFrameStyle() {
-      const w = this.gen.width || 1024;
-      const h = this.gen.height || 1024;
+      // Match the frame to the image being shown (the current job's dimensions),
+      // falling back to the form's size for the empty/placeholder state.
+      const p = this.gen.currentJob?.params;
+      const w = (p && p.width) || this.gen.width || 1024;
+      const h = (p && p.height) || this.gen.height || 1024;
       return `aspect-ratio: ${w} / ${h};`;
     },
 
