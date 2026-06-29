@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.17.1] — 2026-06-29
+
+### Fixed — "Install/Reinstall Generation" was unreachable once the startup service was installed
+
+The diffusers-engine models (SD3.5, Sana, PixArt-Sigma, Lumina2, AuraFlow) need the `diffusers` + `accelerate` packages, installed via **Install Generation** in the Pinokio sidebar. But that menu item only existed in the normal (non-service) menus — once the **always-on startup service** was installed, the menu switched to "service mode" which omitted it, so there was no way to install those deps (the in-app dep-check just said "Missing: diffusers" with no button to fix it).
+
+- **`pinokio.js`** — the service-mode menu now includes **Install/Reinstall Generation**.
+- **`install_generation.js`** is now **service-aware**: in normal mode it stops→installs→starts `start.js` (as before); in service mode it does NOT relaunch `start.js` (that would fight the launchd service for the fixed port) — it installs, then restarts the service (`restart_service.sh`) so the running server reloads Python and picks up the new packages.
+
+Note: this only affects the optional diffusers-engine models. All mflux/MLX models (FLUX.2 klein, FLUX.1 schnell/dev/krea, Qwen-Edit, …) and the cloud models were unaffected and continued to work.
+
+### Note
+- PATCH — launcher scripts only, no app/deps change. Just **Update**.
+
+---
+
 ## [1.17.0] — 2026-06-29
 
 ### Added — per-model `sizes` menu in `GET /api/catalog` (for Story Studio)

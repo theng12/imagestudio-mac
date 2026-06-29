@@ -88,6 +88,12 @@ module.exports = {
         { icon: "fa-solid fa-stethoscope", text: "Check Service Status", href: "service_status.js" },
         { icon: "fa-solid fa-rotate-right", text: "Restart Service", href: "service_restart.js" },
         { icon: "fa-solid fa-screwdriver-wrench", text: "Repair · take over port", href: "service.js" },
+        // Generation engine install — also offered here (service mode) so users
+        // who installed the startup service can still add the heavy MLX/diffusers
+        // deps. install_generation.js detects the service and restarts it after.
+        { icon: "fa-solid fa-wand-magic-sparkles",
+          text: generationInstalled ? "Reinstall Generation" : "Install Generation",
+          href: "install_generation.js" },
         { icon: "fa-solid fa-folder-open", text: "Service Logs", href: "logs/service?fs=true" },
         { icon: "fa-solid fa-file-image", text: "Outputs", href: "app/output?fs=true" },
         { icon: "fa-solid fa-folder-tree", text: "HF Cache", href: "cache/HF_HOME/hub?fs=true" },
