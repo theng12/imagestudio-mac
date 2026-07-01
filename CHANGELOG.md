@@ -10,6 +10,31 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.17.3] — 2026-06-29
+
+### Fixed — download sizes shown in binary GB, disagreeing with Hugging Face + the backend (consistency audit)
+
+Byte-formatting sweep (the same audit run on Voice Studio in v1.7.2/1.7.3).
+
+**Root cause:** the frontend's `humanBytes()` divided by **1024** but labeled the result `"GB"/"MB"` — binary math with decimal labels. Meanwhile Hugging Face reports sizes in **decimal** (÷1e9) and the backend's own download logger uses decimal too (`downloads.py`: `total_bytes / 1e9`). So the same download was `4.62 GB` per HF/the backend but rendered as `4.30 GB` in the frontend progress line — a split-brain on the same bytes.
+
+**Fix (minimal):**
+- `humanBytes()` — `÷1024 → ÷1000`, so the download progress line (done / total / speed) now reports decimal GB/MB matching HF and the backend. Verified: `humanBytes(4619726847)` → **`4.62 GB`** (was `4.30 GB`); `8569680065` → `8.57 GB` (matches the backend's `÷1e9`).
+- `formatGb()` — the sub-1GB branch used `×1024`; changed to `×1000` so a hypothetical <1GB `size_gb` renders decimally (e.g. `0.5 → 500 MB`, not `512 MB`), consistent with `humanBytes`. The `≥1GB` path was already correct (`size_gb` is a decimal-GB value shown as-is).
+
+`humanBytes` is used only in the download-progress line; no other call sites.
+
+### Checked and deliberately left unchanged
+- **State colors** — the app has canonical `--ok`/`--warn`/`--bad`. Some chips use hardcoded hexes, but verified against the vars: the greens (`#6ee7b7` vs `--ok #6ee7a8`) and reds (`#f87171` vs `--bad #ef6a6a`) differ by ≤15/255 per channel — imperceptible, a no-op to "fix." The amber (`#fbbf24`) differs more from `--warn #f3b562`, but it's used in distinct components (RAM-fit tier / dep chips) with no proven same-context clash against a `--warn` element, so consolidating would risk altering intentional design with no visible-bug payoff. Left as-is (same call the Voice Studio audit made on the phantom `.btn` class).
+- **"Cached" casing** — the Status *filter* shows `✓ Cached` (Title-Case, like its sibling filters "Partial" / "Not downloaded" / "Ready to generate"); the model-card badge shows `✓ cached` (lowercase, matching the raw `cache.state === 'cached'` value + the legend). Each is locally consistent with its own context's convention; not terminology drift.
+- **Interaction parity** — downloads have a single entry point (`confirmDownload()` → size/token dialog → `startDownload()`), and `cancelDownload()` is shared identically by the model card and the Downloads tab. There is no per-model "delete" action to be inconsistent. No parity mismatch found.
+- **RAM display** — left in GB (it's installed unified-memory capacity from the backend, not a network/file-transfer byte count) — binary/decimal doesn't apply.
+
+### Note
+- PATCH — frontend only, no new deps. Just **Update** (hard-refresh the page).
+
+---
+
 ## [1.17.2] — 2026-06-29
 
 ### Fixed — generated-image preview collapsed to a tiny strip

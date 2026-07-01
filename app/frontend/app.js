@@ -1815,7 +1815,9 @@ function studio() {
 
     // ──────── formatters ────────
     formatGb(gb) {
-      if (gb < 1) return Math.round(gb * 1024) + " MB";
+      // Decimal (×1000) to match humanBytes + HF's GB convention (size_gb is a
+      // decimal-GB catalog value, so a sub-1GB model is N×1000 MB, not ×1024).
+      if (gb < 1) return Math.round(gb * 1000) + " MB";
       return gb.toFixed(1) + " GB";
     },
 
@@ -1909,8 +1911,12 @@ function studio() {
 }
 
 function humanBytes(n) {
+  // DECIMAL (÷1000) to match how Hugging Face reports file sizes and how the
+  // backend logs the same download total (downloads.py: total_bytes / 1e9).
+  // Using binary (÷1024) here made the progress line show e.g. "4.30 GB" for a
+  // download HF/the backend both call "4.62 GB" — same bytes, different number.
   const units = ["B", "KB", "MB", "GB", "TB"];
   let i = 0;
-  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  while (n >= 1000 && i < units.length - 1) { n /= 1000; i++; }
   return n.toFixed(n < 10 ? 2 : 1) + " " + units[i];
 }
