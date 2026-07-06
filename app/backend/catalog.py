@@ -357,7 +357,7 @@ class ModelEntry:
     family: str
     size_gb: float          # approximate full-precision download size
     gated: bool
-    quantization: Optional[str] = None  # None | "mlx-4bit" | "mlx-8bit"
+    quantization: Optional[str] = None  # None | "mlx-2bit" | "mlx-4bit" | "mlx-8bit"
     min_unified_memory_gb: int = 8
     recommended_hardware: str = ""
     aliases: tuple[str, ...] = field(default_factory=tuple)  # mflux aliases
@@ -408,6 +408,11 @@ class ModelEntry:
     # True when the cloud model needs a BILLING-enabled account, not just a key
     # (Gemini image gen: free-tier quota is 0). Surfaced as fit.state="needs_billing".
     requires_billing: bool = False
+    # A repository can contain MLX weights without using the on-disk format
+    # expected by this app's mflux worker. Keep such models discoverable while
+    # preventing a misleading "Engine ready" state and a guaranteed load crash.
+    runtime_compatible: bool = True
+    runtime_note: str = ""
 
     @property
     def is_apple_optimized(self) -> bool:
@@ -778,6 +783,81 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("good",  "Stylized output (illustration, anime, painterly) — different aesthetic from FLUX"),
             ("good",  "Strong Chinese-language prompt comprehension"),
             ("weak",  "Less detail than full Z-Image — for finals use the standard variant"),
+        ),
+    ),
+    ModelEntry(
+        repo="andrevp/Z-Image-Turbo-MLX",
+        label="Z-Image Turbo — MLX fp16",
+        family="z-image",
+        size_gb=20.54,
+        gated=False,
+        min_unified_memory_gb=32,
+        recommended_hardware="M2 Max / M3 Max with 32 GB+. Full float16 MLX conversion; 9 inference steps and guidance 0.",
+        capabilities=("txt2img", "img2img"),
+        best_for="Full-precision MLX conversion of Z-Image Turbo. Use when you want the publisher's highest-fidelity conversion and have enough unified memory.",
+        use_cases=(
+            ("good",  "Highest fidelity in andrevp's Z-Image Turbo MLX set"),
+            ("good",  "Photorealism, bilingual English/Chinese text, and instruction adherence"),
+            ("good",  "Apache-2.0 license and ungated download"),
+            ("weak",  "20.54 GB download and a practical 32 GB memory floor"),
+        ),
+    ),
+    ModelEntry(
+        repo="andrevp/Z-Image-Turbo-MLX-8bit",
+        label="Z-Image Turbo — MLX 8-bit",
+        family="z-image",
+        size_gb=11.37,
+        gated=False,
+        quantization="mlx-8bit",
+        min_unified_memory_gb=16,
+        recommended_hardware="16 GB+ unified memory. Downloadable, but this external packed-MLX format is not yet loadable by mflux.",
+        capabilities=("txt2img", "img2img"),
+        runtime_compatible=False,
+        runtime_note="This repository uses external packed MLX weights without mflux quantization metadata. Loader support is required before generation.",
+        best_for="Higher-fidelity quantized Z-Image Turbo conversion with a smaller footprint than fp16. Catalogued now for future loader support.",
+        use_cases=(
+            ("good",  "11.37 GB, roughly half the fp16 download"),
+            ("good",  "8-bit quality is the safest quantized option in this set"),
+            ("weak",  "Not currently loadable by Image Studio's mflux worker"),
+        ),
+    ),
+    ModelEntry(
+        repo="andrevp/Z-Image-Turbo-MLX-4bit",
+        label="Z-Image Turbo — MLX 4-bit",
+        family="z-image",
+        size_gb=6.48,
+        gated=False,
+        quantization="mlx-4bit",
+        min_unified_memory_gb=16,
+        recommended_hardware="16 GB+ unified memory. Downloadable, but this external packed-MLX format is not yet loadable by mflux.",
+        capabilities=("txt2img", "img2img"),
+        runtime_compatible=False,
+        runtime_note="This repository uses external packed MLX weights without mflux quantization metadata. Loader support is required before generation.",
+        best_for="Balanced-size Z-Image Turbo MLX conversion. Catalogued now for future loader support.",
+        use_cases=(
+            ("good",  "6.48 GB download; the practical size/quality midpoint"),
+            ("good",  "VAE remains float16 to preserve image decoding quality"),
+            ("weak",  "Not currently loadable by Image Studio's mflux worker"),
+        ),
+    ),
+    ModelEntry(
+        repo="andrevp/Z-Image-Turbo-MLX-2bit",
+        label="Z-Image Turbo — MLX 2-bit",
+        family="z-image",
+        size_gb=4.04,
+        gated=False,
+        quantization="mlx-2bit",
+        min_unified_memory_gb=8,
+        recommended_hardware="8 GB minimum. Smallest conversion, with noticeable quality loss; external packed-MLX format is not yet loadable by mflux.",
+        capabilities=("txt2img", "img2img"),
+        runtime_compatible=False,
+        runtime_note="This repository uses external packed MLX weights without mflux quantization metadata. Loader support is required before generation.",
+        best_for="Smallest Z-Image Turbo MLX download. Catalogued for experimentation once loader support lands; expect visible 2-bit quality degradation.",
+        use_cases=(
+            ("good",  "Smallest option at 4.04 GB"),
+            ("good",  "Potential path for memory-constrained Apple Silicon"),
+            ("weak",  "Publisher warns of noticeable 2-bit quality degradation"),
+            ("weak",  "Not currently loadable by Image Studio's mflux worker"),
         ),
     ),
     ModelEntry(
@@ -1234,6 +1314,83 @@ def get_model(repo: str) -> Optional[ModelEntry]:
     return None
 
 
+def generation_profile(m: ModelEntry) -> dict:
+    """Describe the controls and defaults the Generate UI should expose.
+
+    Providers and engines accept different parameters. Keeping this contract
+    beside the catalog prevents the frontend from showing controls that are
+    silently ignored and gives future catalog additions one place to declare
+    their generation behavior.
+    """
+    repo = m.repo.lower()
+    distilled = (
+        m.family in {"flux2-klein", "flux1-schnell"}
+        or "turbo" in repo
+        or "lightning" in repo
+    )
+    is_upscaler = m.family == "seedvr2"
+
+    defaults = {"steps": 20, "guidance": 4.0, "image_strength": 0.6}
+    if m.family == "flux2-klein":
+        defaults.update(steps=4, guidance=1.0, image_strength=0.85)
+    elif m.family == "flux1-schnell":
+        defaults.update(steps=4, guidance=0.0)
+    elif m.family in {"flux1-dev", "flux1-krea", "flux1-kontext"}:
+        defaults.update(steps=24, guidance=3.5)
+    elif m.family in {"qwen-image", "qwen-edit", "fibo"}:
+        defaults.update(steps=20, guidance=4.0)
+    elif m.family == "z-image":
+        defaults.update(steps=9 if "turbo" in repo else 24, guidance=0.0 if "turbo" in repo else 4.0)
+    elif m.family == "sd35":
+        defaults.update(steps=28, guidance=4.0)
+    elif m.family in {"sana", "pixart-sigma"}:
+        defaults.update(steps=20, guidance=4.5)
+    elif m.family == "lumina2":
+        defaults.update(steps=35, guidance=4.0)
+    elif m.family == "auraflow":
+        defaults.update(steps=40, guidance=3.5)
+
+    if m.is_cloud:
+        supports_negative = m.cloud_provider in {"huggingface", "nebius"}
+        if m.cloud_provider == "cloudflare":
+            model_id = (m.cloud_model_id or "").lower()
+            supports_negative = "flux" not in model_id and "lucid" not in model_id
+        controls = {
+            "prompt": True,
+            "aspect_ratio": m.supports_custom_dimensions,
+            "negative_prompt": supports_negative,
+            "steps": False,
+            "guidance": False,
+            "seed": m.cloud_provider != "gemini",
+            "batch": True,
+            "image_strength": False,
+            "runtime_quantization": False,
+            "loras": False,
+        }
+        summary = "Hosted model: only settings accepted by this provider are shown."
+    else:
+        controls = {
+            "prompt": not is_upscaler,
+            "aspect_ratio": m.supports_custom_dimensions and not is_upscaler,
+            "negative_prompt": not is_upscaler and not distilled,
+            "steps": not is_upscaler,
+            "guidance": not is_upscaler and not distilled,
+            "seed": not is_upscaler,
+            "batch": True,
+            "image_strength": not is_upscaler and any(c in m.capabilities for c in ("img2img", "edit")),
+            "runtime_quantization": m.engine == "mflux" and not m.is_apple_optimized and not is_upscaler,
+            "loras": m.family in {"flux2-klein", "flux1-schnell", "flux1-dev", "flux1-krea"},
+        }
+        summary = (
+            "Upscaler workflow: provide an image; generation tuning is handled by the model."
+            if is_upscaler else
+            ("Distilled model: its fast trained defaults are applied automatically."
+             if distilled else "Balanced defaults for this model family are applied automatically.")
+        )
+
+    return {"controls": controls, "defaults": defaults, "summary": summary}
+
+
 def serialize_model(m: ModelEntry) -> dict:
     # Compute a per-model hardware-fit verdict against the running Mac's
     # detected RAM. Imported lazily to avoid a circular import at module load.
@@ -1335,6 +1492,9 @@ def serialize_model(m: ModelEntry) -> dict:
         # New in v1.9.0 — local inference engine (mflux vs diffusers).
         "engine": m.engine,
         "is_diffusers": m.is_diffusers,
+        "runtime_compatible": m.runtime_compatible,
+        "runtime_note": m.runtime_note,
+        "generation_profile": generation_profile(m),
     }
 
 

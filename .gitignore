@@ -2,6 +2,8 @@ conda_env/
 cache/
 logs/
 app/output/
+app/.generation-install.json
+logs/generation-install.log
 app/uploads/
 app/__pycache__/
 app/backend/__pycache__/

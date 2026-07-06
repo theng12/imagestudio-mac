@@ -60,6 +60,8 @@ function studio() {
       dragOver: false,             // UI flag for the drop zone hover state
       loraNames: [],
       loraWeights: {},
+      advancedOpen: false,
+      _profileRepo: "",
       // `busy` reflects "a job is running or queued" — used by the output area
       //   to show "Generating… N/M" progress text. NOT used by the Generate
       //   button anymore (would block queueing — see v1.2.3).
@@ -85,6 +87,14 @@ function studio() {
       _lastFetched: 0,
     },
 
+    generationInstall: {
+      state: "idle",
+      message: "",
+      restart_required: false,
+      log_tail: [],
+      busy: false,
+    },
+
     // Toast notifications (auto-dismiss after 5s)
     toasts: [],
     _toastSeq: 0,
@@ -101,14 +111,15 @@ function studio() {
       families: new Set(),
       statuses: new Set(),
       capabilities: new Set(),
-      // New in v1.1.2 — two boolean filter chips.
-      mlxOnly: false,           // when true, hide non-MLX entries
+      // Advanced filters stay opt-in so the full family catalog is visible.
+      mlxOnly: false,           // pre-quantized MLX weights only
       fitsMyMac: false,         // when true, hide entries where fit.state === 'risky'
       // segmented RAM-fit filter, scored against the RAM slider:
       // "all" | "ok" (green) | "tight" (yellow) | "over" (red)
       fitLevel: "all",
       sortBy: "default",
-      collapsedFamilies: new Set(),
+      advancedOpen: false,
+      openFamilies: new Set(),
       // Per-repo "show full details" toggle. Cards default to compact —
       // use_cases + best_for + saved-loc are hidden until the user expands.
       // Backed by a Set so toggling one card doesn't re-render every card.
@@ -177,11 +188,11 @@ function studio() {
       // Also re-measure on next animation frame in case fonts/layout settle late.
       requestAnimationFrame(() => this._syncTopbarHeight());
       await this.refreshCatalog();
-      // After catalog loads we know whether MLX models exist — set the MLX-only
-      // filter default based on that (and respect any user-saved preference).
       this._initFilterPreferences();
+      this._initFamilyLibrary();
       await this.refreshGenAvailability();
       await this.refreshDiagnostics();
+      await this.refreshGenerationInstall();
       await this.refreshLoras();
       await this.refreshSettings();
       this.startJobStream();
@@ -302,11 +313,11 @@ function studio() {
                          + (Number(m.size_gb) || 0) * 10
                          + (/recommended/i.test(m.label || "") ? 5 : 0);
       const pickHeavy = (predicate) => {
-        const c = (this.models || []).filter(m => fits(m) && predicate(m));
+        const c = (this.models || []).filter(m => !m.is_cloud && fits(m) && predicate(m));
         return c.length ? c.slice().sort((a, b) => heavy(b) - heavy(a))[0] : null;
       };
       const pickLight = (predicate) => {
-        const c = (this.models || []).filter(m => fits(m) && predicate(m));
+        const c = (this.models || []).filter(m => !m.is_cloud && fits(m) && predicate(m));
         // Lightest on-disk model = fastest to load / iterate with.
         return c.length ? c.slice().sort((a, b) => (Number(a.size_gb) || 0) - (Number(b.size_gb) || 0))[0] : null;
       };
@@ -366,7 +377,8 @@ function studio() {
           if (f.fitsMyMac && this.fitFor(m.min_unified_memory_gb).state === "risky") return false;
         }
         if (q) {
-          const hay = ((m.label || "") + " " + (m.repo || "") + " " + (m.best_for || "")).toLowerCase();
+          const hay = ((m.label || "") + " " + (m.family_label || "") + " "
+            + (m.repo || "") + " " + (m.best_for || "")).toLowerCase();
           if (!hay.includes(q)) return false;
         }
         return true;
@@ -401,7 +413,8 @@ function studio() {
         if (!this.inScope(m)) continue;
         for (const c of (m.capabilities || [])) set.add(c);
       }
-      return Array.from(set).sort();
+      const order = { txt2img: 0, img2img: 1, edit: 2 };
+      return Array.from(set).sort((a, b) => (order[a] ?? 99) - (order[b] ?? 99) || a.localeCompare(b));
     },
     get availableFamilies() {
       const seen = new Set();
@@ -413,6 +426,85 @@ function studio() {
         out.push({ id: m.family, label: m.family_label || this.families?.[m.family]?.label || m.family });
       }
       return out.sort((a, b) => a.label.localeCompare(b.label));
+    },
+    /** Family-first view model. Cached families come first, followed by those
+     *  with a variant that fits the selected RAM budget, then alphabetically. */
+    get visibleFamilies() {
+      const families = Object.values(this.families || {})
+        .map(f => ({ ...f, models: this.filteredModelsByFamily[f.id] || [] }))
+        .filter(f => f.models.length > 0);
+      const rank = (f) => {
+        const cached = f.models.some(m => m.cache?.state === "cached") ? 0 : 1;
+        const fits = this.modelScope === "cloud"
+          || f.models.some(m => this.fitFor(m.min_unified_memory_gb).state !== "risky") ? 0 : 1;
+        return cached * 100 + fits * 10;
+      };
+      return families.sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
+    },
+    familyCapabilities(family) {
+      const caps = new Set();
+      for (const m of (family.models || [])) {
+        for (const cap of (m.capabilities || [])) caps.add(cap);
+      }
+      return Array.from(caps);
+    },
+    familyRuntimeLabel(family) {
+      if (this.modelScope === "cloud") return "Hosted API";
+      const engines = new Set((family.models || []).map(m => m.engine));
+      if (engines.has("mflux") && engines.has("diffusers")) return "MLX + MPS";
+      if (engines.has("diffusers")) return "PyTorch / MPS";
+      return "Apple MLX";
+    },
+    familyMemoryLabel(family) {
+      if (this.modelScope === "cloud") return "No download";
+      const floors = (family.models || []).map(m => Number(m.min_unified_memory_gb) || 0);
+      return floors.length ? `from ${Math.min(...floors)} GB RAM` : "RAM varies";
+    },
+    familyCachedCount(family) {
+      return (family.models || []).filter(m => m.cache?.state === "cached").length;
+    },
+    isRecommendedFamily(family) {
+      return this.modelScope === "local" && !!this.bestPicks[0]
+        && (family.models || []).some(m => m.repo === this.bestPicks[0].model.repo);
+    },
+    familyTone(family) {
+      const caps = this.familyCapabilities(family);
+      if (caps.includes("edit") && !caps.includes("txt2img")) return "tone-edit";
+      if (caps.includes("img2img") && !caps.includes("txt2img")) return "tone-upscale";
+      if (this.modelScope === "cloud") return "tone-cloud";
+      if ((family.models || []).some(m => m.engine === "diffusers")) return "tone-mps";
+      return "tone-mlx";
+    },
+    modelVariantLabel(model) {
+      const family = this.families?.[model.family];
+      const familyLabel = family?.label || model.family_label || "";
+      let label = model.label || model.repo;
+      if (familyLabel && label.toLowerCase().startsWith(familyLabel.toLowerCase())) {
+        label = label.slice(familyLabel.length).replace(/^\s*(?:[-—:]+)\s*/, "");
+      }
+      return label || "Standard";
+    },
+    modelRuntimeLabel(model) {
+      if (model.is_cloud) return model.cloud_provider_label || "Cloud";
+      return model.engine === "diffusers" ? "PyTorch / MPS" : "Apple MLX";
+    },
+    modelFormatLabel(model) {
+      if (model.is_cloud) return "Hosted";
+      if (model.quantization === "mlx-2bit") return "Pre-quantized 2-bit";
+      if (model.quantization === "mlx-4bit") return "Pre-quantized 4-bit";
+      if (model.quantization === "mlx-8bit") return "Pre-quantized 8-bit";
+      if (model.engine === "diffusers") return "Diffusers weights";
+      return "Full weights";
+    },
+    modelRoleLabel(model) {
+      if (/recommended/i.test(model.label || "")) return "Recommended";
+      if (model.quantization === "mlx-2bit") return "Smallest";
+      if (model.quantization === "mlx-4bit") return "Fastest loads";
+      if (model.quantization === "mlx-8bit") return "Balanced";
+      if (/full/i.test(model.label || "")) return "Full fidelity";
+      if ((model.capabilities || []).length === 1 && model.capabilities[0] === "edit") return "Editing";
+      if ((model.capabilities || []).length === 1 && model.capabilities[0] === "img2img") return "Upscaling";
+      return "";
     },
     get filteredModelTotalCount() {
       return Object.values(this.filteredModelsByFamily).reduce((s, list) => s + list.length, 0);
@@ -470,17 +562,13 @@ function studio() {
       if (s.has(cap)) s.delete(cap); else s.add(cap);
       this.modelFilters.capabilities = new Set(s);
     },
-    /** Toggle "Apple Silicon (MLX) only" — filters out non-MLX entries.
-     *  Persists the choice so fresh sessions remember it. */
+    /** Opt-in filter for weights already converted to MLX quantization. */
     toggleMlxFilter() {
       this.modelFilters.mlxOnly = !this.modelFilters.mlxOnly;
-      this._persistFilterPref("mlxOnly", this.modelFilters.mlxOnly);
     },
-    /** Toggle "Fits my Mac" — hides entries that would OOM/swap on this hardware.
-     *  Persists the choice. */
+    /** Toggle "Fits my Mac" — hides entries that would OOM/swap on this hardware. */
     toggleFitsMyMacFilter() {
       this.modelFilters.fitsMyMac = !this.modelFilters.fitsMyMac;
-      this._persistFilterPref("fitsMyMac", this.modelFilters.fitsMyMac);
     },
     /** Helper: write a filter preference to localStorage. App-namespaced
      *  ("imagestudio.…") so the 3 apps don't collide if ever served same-origin.
@@ -490,29 +578,31 @@ function studio() {
         localStorage.setItem(`imagestudio.modelFilters.${name}`, String(value));
       } catch {}
     },
-    /** Called once on init after the catalog loads. Restores any saved filter
-     *  preferences, OR sets sensible defaults for a fresh session:
-     *    - mlxOnly defaults to TRUE if the catalog has MLX-optimized models
-     *      (Apple Silicon focus); FALSE otherwise so we don't show 0 results.
-     *    - fitsMyMac defaults to FALSE — letting users see all-and-decide is
-     *      friendlier than hiding things they could choose to run with apps closed. */
+    /** Restore durable scope/RAM preferences. Format filters intentionally do
+     *  not persist: opening Models should never hide most of the catalog. */
     _initFilterPreferences() {
       try {
-        const savedMlx = localStorage.getItem("imagestudio.modelFilters.mlxOnly");
-        if (savedMlx !== null) {
-          this.modelFilters.mlxOnly = savedMlx === "true";
-        } else if (this.models.some(m => m.apple_optimized)) {
-          this.modelFilters.mlxOnly = true;
-        }
-        const savedFit = localStorage.getItem("imagestudio.modelFilters.fitsMyMac");
-        if (savedFit !== null) {
-          this.modelFilters.fitsMyMac = savedFit === "true";
-        }
+        this.modelFilters.mlxOnly = false;
+        this.modelFilters.fitsMyMac = false;
+        localStorage.removeItem("imagestudio.modelFilters.mlxOnly");
+        localStorage.removeItem("imagestudio.modelFilters.fitsMyMac");
         const savedScope = localStorage.getItem("imagestudio.modelFilters.modelScope");
         if (savedScope === "local" || savedScope === "cloud") {
           this.modelScope = savedScope;
         }
       } catch {}
+    },
+    _initFamilyLibrary() {
+      if (this.modelFilters.openFamilies.size > 0) return;
+      this._openBestFamilyForScope();
+    },
+    _openBestFamilyForScope() {
+      const inScope = (this.models || []).filter(m => this.inScope(m));
+      const cached = inScope.find(m => m.cache?.state === "cached");
+      const fitting = inScope.find(m => this.modelScope === "cloud"
+        || this.fitFor(m.min_unified_memory_gb).state !== "risky");
+      const first = cached || fitting || inScope[0];
+      this.modelFilters.openFamilies = new Set(first ? [first.family] : []);
     },
     /** Switch the Models tab between Local and Cloud. Filters are scope-specific
      *  (families/statuses/etc. only exist in one scope), so reset them on switch
@@ -527,6 +617,7 @@ function studio() {
       this.modelFilters.mlxOnly = false;
       this.modelFilters.fitLevel = "all";
       this._persistFilterPref("modelScope", scope);
+      this._openBestFamilyForScope();
     },
     /** Per-card expand/collapse. Default state is collapsed (compact card);
      *  the user clicks "Show details" to reveal best_for + use_cases + saved-loc. */
@@ -552,15 +643,19 @@ function studio() {
       // Reset entirely — simpler and consistent with "make all cards compact again"
       this.modelFilters.expandedRepos = new Set();
     },
-    toggleFamilyCollapsed(familyId) {
-      const s = this.modelFilters.collapsedFamilies;
+    toggleFamilyOpen(familyId) {
+      const s = this.modelFilters.openFamilies;
       if (s.has(familyId)) s.delete(familyId); else s.add(familyId);
-      this.modelFilters.collapsedFamilies = new Set(s);
+      this.modelFilters.openFamilies = new Set(s);
     },
     isFamilyFiltered(familyId)   { return this.modelFilters.families.has(familyId); },
     isStatusFiltered(status)     { return this.modelFilters.statuses.has(status); },
     isCapFiltered(cap)           { return this.modelFilters.capabilities.has(cap); },
-    isFamilyCollapsed(familyId)  { return this.modelFilters.collapsedFamilies.has(familyId); },
+    isFamilyOpen(familyId) {
+      return this.modelFilters.openFamilies.has(familyId)
+        || !!this.modelFilters.search.trim()
+        || this.modelFilters.families.has(familyId);
+    },
     clearAllFilters() {
       this.modelFilters.search = "";
       this.modelFilters.families = new Set();
@@ -600,13 +695,45 @@ function studio() {
       return this.cachedModels.find(m => m.repo === this.gen.repo) || null;
     },
 
+    get selectedProfile() {
+      return this.selectedModel?.generation_profile || { controls: {}, defaults: {}, summary: "" };
+    },
+
+    supportsControl(name) {
+      return this.selectedProfile?.controls?.[name] !== false;
+    },
+
+    get selectedReadiness() {
+      const m = this.selectedModel;
+      if (!m) return { state: "empty", label: "Choose a model", detail: "Download a model or choose a cloud option to begin." };
+      if (m.is_cloud) {
+        if (m.fit?.state === "needs_billing") return { state: "blocked", label: "Billing required", detail: m.fit.hint };
+        if (m.cloud_credentials_ok === false) return { state: "blocked", label: "API key required", detail: m.fit?.hint || "Add this provider in Settings." };
+        return { state: "ready", label: "Cloud ready", detail: "No local engine or model download is required." };
+      }
+      if (m.runtime_compatible === false) {
+        return { state: "blocked", label: "Conversion format unsupported", detail: m.runtime_note || "This model needs a compatible local loader." };
+      }
+      const engine = this.modelEngine(m.repo);
+      if (!this.gen.available || (engine && !engine.deps_ok)) {
+        return { state: "install", label: "Engine needs installation", detail: "Install the local generation engines once on this server." };
+      }
+      if (engine && !engine.wired) {
+        return { state: "blocked", label: "Model worker unavailable", detail: "Its packages are installed, but this model does not have a generation worker yet." };
+      }
+      if (engine && !engine.ready) {
+        return { state: "install", label: "Engine needs repair", detail: "One or more required packages are missing." };
+      }
+      return { state: "ready", label: "Ready on this Mac", detail: `${m.engine === "diffusers" ? "PyTorch / MPS" : "Apple MLX"} engine is installed.` };
+    },
+
     /** Whether the Generate button can be clicked right now.
      *  Intentionally does NOT include `gen.busy` — a running job is fine to
      *  queue behind. Backend's _GEN_LOCK serializes execution. */
     get canSubmit() {
-      if (!this.gen.available) return false;
-      if (this.cachedModels.length === 0) return false;
-      if (!this.gen.prompt.trim()) return false;
+      if (!this.selectedModel) return false;
+      if (!this.selectedModel.is_cloud && !this.gen.available) return false;
+      if (this.supportsControl("prompt") && !this.gen.prompt.trim()) return false;
       if (this.gen.submitting) return false;
       if (this.gen.repo && !this.isModelReady(this.gen.repo)) return false;
       // img2img/edit need an input image too
@@ -716,6 +843,7 @@ function studio() {
     jobProviderLabel(job) {
       const repo = job?.params?.repo;
       const m = (this.models || []).find(x => x.repo === repo);
+      if (m && m.runtime_compatible === false) return false;
       if (m?.is_cloud) return m.cloud_provider_label || "cloud";
       return null;
     },
@@ -779,6 +907,7 @@ function studio() {
       return !!e.ready;
     },
     modelOptionLabel(m) {
+      if (m.runtime_compatible === false) return `◌ ${m.label} — format support pending`;
       const e = (this.diag.engines || []).find(x => x.family === m.family);
       if (!e || e.ready) return m.label;
       // Distinguish "missing packages" (fixable by user) from "worker in roadmap"
@@ -991,7 +1120,30 @@ function studio() {
       const compatible = this.modeCompatibleModels;
       const stillValid = compatible.some(m => m.repo === this.gen.repo);
       if (!stillValid) {
-        this.gen.repo = compatible[0]?.repo || (this.cachedModels[0]?.repo || "");
+        const ready = compatible.find(m => this.isModelReady(m.repo));
+        this.gen.repo = ready?.repo || compatible[0]?.repo || (this.cachedModels[0]?.repo || "");
+      }
+      this.applySelectedModelDefaults();
+    },
+
+    selectGenerationModel(repo) {
+      this.gen.repo = repo;
+      this.applySelectedModelDefaults(true);
+    },
+
+    applySelectedModelDefaults(force = false) {
+      const m = this.selectedModel;
+      if (!m || (!force && this.gen._profileRepo === m.repo)) return;
+      const d = m.generation_profile?.defaults || {};
+      if (typeof d.steps === "number") this.gen.steps = d.steps;
+      if (typeof d.guidance === "number") this.gen.guidance = d.guidance;
+      if (typeof d.image_strength === "number") this.gen.imageStrength = d.image_strength;
+      this.gen.quantize = null;
+      this.gen._profileRepo = m.repo;
+      const sizes = m.sizes || [];
+      const preferred = sizes.find(s => s.default) || sizes.find(s => s.tier === "balanced") || sizes[0];
+      if (preferred && m.supports_custom_dimensions !== false) {
+        this.pickAspect({ ratio: preferred.aspect_ratio, width: preferred.width, height: preferred.height });
       }
     },
 
@@ -1007,6 +1159,7 @@ function studio() {
         // klein-edit is distilled — guidance pinned to 1.0 internally
         if (this.gen.guidance > 1.5) this.gen.guidance = 1.0;
       }
+      this.applySelectedModelDefaults(true);
     },
 
     startJobStream() {
@@ -1337,6 +1490,41 @@ function studio() {
       } catch { /* keep last */ }
     },
 
+    async refreshGenerationInstall() {
+      try {
+        const r = await fetch("/api/generate/install/status");
+        if (!r.ok) return;
+        const data = await r.json();
+        this.generationInstall = { ...this.generationInstall, ...data, busy: data.state === "installing" || data.state === "restarting" };
+        if (this.generationInstall.busy) {
+          setTimeout(() => this.refreshGenerationInstall(), 1500);
+        } else if (data.state === "done") {
+          await this.refreshGenAvailability();
+          await this.refreshDiagnostics();
+        }
+      } catch {
+        if (this.generationInstall.busy) setTimeout(() => this.refreshGenerationInstall(), 2000);
+      }
+    },
+
+    async installGeneration() {
+      if (this.generationInstall.busy) return;
+      this.generationInstall.busy = true;
+      this.generationInstall.state = "installing";
+      this.generationInstall.message = "Starting the generation engine installer...";
+      try {
+        const r = await fetch("/api/generate/install", { method: "POST" });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        this.generationInstall = { ...this.generationInstall, ...data, busy: true };
+        setTimeout(() => this.refreshGenerationInstall(), 1000);
+      } catch (e) {
+        this.generationInstall.state = "error";
+        this.generationInstall.message = String(e.message || e);
+        this.generationInstall.busy = false;
+      }
+    },
+
     async refreshGenAvailability() {
       try {
         const r = await fetch("/api/generate/availability");
@@ -1519,9 +1707,9 @@ function studio() {
     },
 
     async submitGenerate() {
-      if (!this.gen.available) {
+      if (!this.selectedModel?.is_cloud && !this.gen.available) {
         this.pushToast({ kind: "warn", icon: "⚠", title: "Engine not installed",
-          body: "Click Install Generation in the Pinokio sidebar." });
+          body: "Use Install engines in the readiness card." });
         return;
       }
       if (!this.selectedModel) {
@@ -1529,7 +1717,7 @@ function studio() {
           body: "Open the Models tab and download one." });
         return;
       }
-      if (!this.gen.prompt.trim()) return;
+      if (this.supportsControl("prompt") && !this.gen.prompt.trim()) return;
       if ((this.gen.mode === "img2img" || this.gen.mode === "edit") && !this.gen.inputImageFile) {
         this.pushToast({ kind: "warn", icon: "⚠", title: "Input image required",
           body: this.gen.mode === "edit"

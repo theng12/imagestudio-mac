@@ -7,7 +7,7 @@
   <!-- Cache-busters: bump the ?v= string whenever the static assets are updated
        so Pinokio's webview can't keep serving a stale build. The backend also
        sends Cache-Control: no-store for these paths as a belt-and-braces. -->
-  <link rel="stylesheet" href="/assets/style.css?v=logo-1" />
+  <link rel="stylesheet" href="/assets/style.css?v=family-library-1" />
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
@@ -17,7 +17,7 @@
        which is before app.js loads. prompts.js sets window.SAMPLE_PROMPTS
        and must load before app.js references it. -->
   <script defer src="/assets/prompts.js?v=queue-1"></script>
-  <script defer src="/assets/app.js?v=queue-1"></script>
+  <script defer src="/assets/app.js?v=family-library-1"></script>
   <script defer src="/assets/alpine.min.js?v=queue-1"></script>
 </head>
 <body x-data="studio()" x-init="init()">
@@ -47,28 +47,17 @@
 
   <!-- ─────────── GENERATE ─────────── -->
   <main x-show="tab==='generate'" class="page generate-page">
-    <section class="page-head">
-      <h1>Generate</h1>
-      <p class="muted">
-        Text-to-image first; img2img and edit modes coming next. Aspect ratios are
-        ~1 megapixel each so latency is comparable across them.
-      </p>
-    </section>
-
-    <!-- Generation engine not installed -->
-    <div class="banner warn" x-show="!gen.available" x-cloak>
+    <header class="generate-hero">
       <div>
-        <strong>Generation engine not installed.</strong>
-        <p class="muted">
-          Click <strong>Install Generation</strong> in the Pinokio sidebar (left edge of the
-          Pinokio window, the ✨ wand icon). That step installs <em>mflux</em> — the Python
-          library that actually runs FLUX models on Apple Silicon — plus its dependencies
-          (<em>MLX</em>, <em>transformers</em>, <em>safetensors</em>). It's a multi-GB one-time download.
-          After it finishes, Stop → Start the server and this banner will disappear.
-        </p>
-        <p class="error-text" x-show="gen.error" x-text="gen.error"></p>
+        <span class="models-eyebrow">Image workspace</span>
+        <h1>Describe it. Shape it. Generate.</h1>
+        <p>Start with the defaults. Image Studio reveals tuning controls only when your selected model can use them.</p>
       </div>
-    </div>
+      <div class="generate-machine">
+        <span x-text="system.chip || 'Apple Silicon'"></span>
+        <strong x-text="selectedModel?.is_cloud ? 'Cloud generation' : ((system.unified_memory_gb || '—') + ' GB unified memory')"></strong>
+      </div>
+    </header>
 
     <!-- No cached models — point users at the Models tab -->
     <div class="banner info" x-show="gen.available && cachedModels.length === 0" x-cloak>
@@ -83,112 +72,41 @@
       </div>
     </div>
 
-    <!-- Soft hint when at least one is cached -->
-    <p class="muted soft-hint" x-show="gen.available && cachedModels.length > 0" x-cloak>
-      💡 Want a different model? Browse and download more in
-      <a class="link-accent" @click="tab='models'">Models</a>, or
-      <a class="link-accent" @click="tab='imports'">Import</a> weights you already have.
-    </p>
-
-    <!-- ─── Dependency diagnostics (collapsible) ─── -->
-    <details class="diag" :open="diag.any_missing">
-      <summary>
-        <span class="diag-summary-text">
-          🩺 Dependency check
-          <span class="muted small">
-            <span x-show="diag.total_engines"
-                  x-text="diag.ready_count + ' / ' + diag.total_engines + ' engines ready'"></span>
-            <span x-show="diag.any_missing" class="diag-warn"> · some packages missing</span>
-          </span>
-        </span>
-        <button class="btn ghost small" @click.prevent="refreshDiagnostics()">↻ Re-check</button>
-      </summary>
-      <div class="diag-body">
-        <p class="muted">
-          Each engine needs a specific set of packages. If something below shows ❌, run
-          <strong>Install Generation</strong> from the Pinokio sidebar (shown as <strong>Reinstall Generation</strong> if already run once — same button), then <strong>Stop → Start</strong> the server.
-          <span x-show="diag.device">Backend reports device <code x-text="diag.device"></code>.</span>
-        </p>
-
-        <details class="diag-explainer">
-          <summary>Why does each model need its own packages?</summary>
-          <div class="diag-explainer-body">
-            <p>
-              Different model families use different inference libraries.
-              <strong>FLUX 1 / FLUX 2 / Klein</strong> run through <code>mflux</code> on MLX,
-              <strong>Qwen-Image-Edit</strong> uses <code>transformers</code>,
-              and future engines may add their own.
-              The catalog mixes models from different ecosystems so you can pick the
-              right tool for each task — but each library has to be importable for
-              that model's engine to run.
-            </p>
-            <p>
-              <strong>Good news: installation is a one-time thing.</strong> Click
-              <strong>Install Generation</strong> in the Pinokio sidebar once, restart
-              the server, and every model in those families works permanently. You
-              only ever re-install after <strong>Reset</strong> or on a new machine.
-            </p>
-            <p>
-              The "Install Generation" script bundles all the libraries together for
-              simplicity. If you only ever plan to use one engine, the extra packages
-              still install but they're idle — they don't slow anything down.
-            </p>
-          </div>
-        </details>
-
-        <h4 class="diag-h4">Packages</h4>
-        <table class="diag-table">
-          <thead><tr><th></th><th>Package</th><th>Version</th><th>Role</th></tr></thead>
-          <tbody>
-            <template x-for="p in (diag.packages || [])" :key="p.package">
-              <tr :class="{'diag-row-bad': !p.installed}">
-                <td><span x-text="p.installed ? '✅' : '❌'"></span></td>
-                <td><code x-text="p.package"></code></td>
-                <td class="diag-version">
-                  <span x-show="p.installed" x-text="p.version || '(no __version__)'"></span>
-                  <span x-show="!p.installed" class="muted small" x-text="p.error || 'not importable'"></span>
-                </td>
-                <td class="muted small" x-text="p.role"></td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-
-        <h4 class="diag-h4">Engines</h4>
-        <table class="diag-table">
-          <thead><tr><th></th><th>Family</th><th>Status</th><th>Requires</th></tr></thead>
-          <tbody>
-            <template x-for="e in (diag.engines || [])" :key="e.family">
-              <tr :class="{'diag-row-bad': !e.ready && !e.deps_ok, 'diag-row-pending': e.deps_ok && !e.wired}">
-                <td>
-                  <span x-show="e.ready">✅</span>
-                  <span x-show="!e.ready && e.deps_ok && !e.wired" title="Packages installed; worker ships in a future phase">🕓</span>
-                  <span x-show="!e.deps_ok">⛔</span>
-                </td>
-                <td><code x-text="e.family"></code></td>
-                <td>
-                  <span x-show="e.ready" class="diag-ok">Ready</span>
-                  <span x-show="!e.ready && e.deps_ok && !e.wired" class="diag-pending">
-                    Worker ships in a future phase (packages OK)
-                  </span>
-                  <span x-show="!e.deps_ok" class="diag-bad">
-                    Missing:
-                    <template x-for="m in e.missing" :key="m">
-                      <code x-text="m"></code>
-                    </template>
-                  </span>
-                </td>
-                <td class="muted small">
-                  <template x-for="r in e.requires" :key="r">
-                    <span><code x-text="r"></code> </span>
-                  </template>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
+    <section class="readiness-card" :class="'readiness-' + selectedReadiness.state">
+      <span class="readiness-orb"></span>
+      <div class="readiness-copy">
+        <span>Selected model readiness</span>
+        <strong x-text="selectedReadiness.label"></strong>
+        <p x-text="selectedReadiness.detail"></p>
       </div>
-    </details>
+      <div class="readiness-actions">
+        <button class="primary small" x-show="selectedReadiness.state==='install'"
+                :disabled="generationInstall.busy" @click="installGeneration()"
+                x-text="generationInstall.busy ? 'Installing…' : 'Install engines'"></button>
+        <button class="ghost small" x-show="selectedReadiness.state==='blocked' && selectedModel?.is_cloud" @click="tab='settings'">Open Settings</button>
+        <button class="ghost small" @click="refreshDiagnostics(); refreshGenAvailability()">Re-check</button>
+      </div>
+      <div class="install-progress" x-show="generationInstall.state!=='idle'" x-cloak>
+        <strong x-text="generationInstall.message"></strong>
+        <span x-show="generationInstall.restart_required">Restart Image Studio once to finish.</span>
+        <details x-show="generationInstall.log_tail?.length">
+          <summary>Installer log</summary>
+          <pre x-text="(generationInstall.log_tail || []).join('\n')"></pre>
+        </details>
+      </div>
+      <details class="readiness-technical">
+        <summary>Technical details · <span x-text="diag.ready_count + '/' + diag.total_engines + ' local engines ready'"></span></summary>
+        <div class="engine-chip-list">
+          <template x-for="e in (diag.engines || [])" :key="e.family">
+            <span :class="e.ready ? 'ok' : (e.deps_ok ? 'pending' : 'bad')">
+              <b x-text="e.ready ? 'Ready' : (e.deps_ok ? 'Unavailable' : 'Missing')"></b>
+              <span x-text="families[e.family]?.label || e.family"></span>
+            </span>
+          </template>
+        </div>
+        <p class="muted small">The installer adds the checked-in MLX and Diffusers requirements only. Cloud models never need these local packages.</p>
+      </details>
+    </section>
 
     <!-- Subtabs -->
     <nav class="subtabs">
@@ -204,13 +122,18 @@
         <!-- Model picker (cached + capability-filtered for the current mode) -->
         <section class="control-block">
           <label>Model</label>
-          <select x-model="gen.repo">
+          <select x-model="gen.repo" @change="selectGenerationModel($event.target.value)">
             <template x-for="m in modeCompatibleModels" :key="m.repo">
               <option :value="m.repo"
                       :disabled="!isModelReady(m.repo)"
                       x-text="modelOptionLabel(m)"></option>
             </template>
           </select>
+          <div class="model-profile-line" x-show="selectedModel" x-cloak>
+            <span x-text="selectedModel?.family_label"></span>
+            <span x-text="selectedModel?.is_cloud ? (selectedModel.cloud_provider_label || 'Cloud') : (selectedModel?.engine === 'diffusers' ? 'PyTorch / MPS' : 'Apple MLX')"></span>
+            <span x-text="selectedProfile.summary"></span>
+          </div>
 
           <!-- Cloud model whose API credential isn't configured -->
           <div class="banner warn dep-warn"
@@ -243,34 +166,6 @@
               </p>
             </div>
           </div>
-          <!-- Per-model dependency warning (LOCAL models only) -->
-          <div class="banner warn dep-warn"
-               x-show="gen.repo && !isModelReady(gen.repo) && !(selectedModel && selectedModel.is_cloud)"
-               x-cloak>
-            <div>
-              <strong>This model needs additional packages.</strong>
-              <p class="muted">
-                Missing:
-                <template x-for="dep in modelMissingDeps(gen.repo)" :key="dep">
-                  <code class="dep-chip" x-text="dep"></code>
-                </template>
-              </p>
-              <p class="muted">
-                Different model families use different inference libraries.
-                Image Studio mixes them so you can pick the right one per task — but
-                each library has to be importable for that model's engine to run.
-              </p>
-              <p class="muted">
-                <strong>One-time fix</strong> (per launcher): click <strong>Install Generation</strong>
-                in the Pinokio sidebar, then <strong>Stop → Start</strong> this server.
-                After that, every model in this family works permanently. See the
-                <a class="link-accent" @click.prevent="document.querySelector('details.diag')?.setAttribute('open','')">
-                  🩺 Dependency check
-                </a>
-                panel above for the full status.
-              </p>
-            </div>
-          </div>
           <p class="muted hint" x-show="modeCompatibleModels.length === 0 && cachedModels.length > 0">
             None of your cached models support <strong x-text="gen.mode==='edit' ? 'instruction edit' : (gen.mode==='img2img' ? 'image → image' : 'this mode')"></strong>.
             <span x-show="gen.mode==='edit'">
@@ -287,7 +182,7 @@
         </section>
 
         <!-- Prompt / Edit instruction -->
-        <section class="control-block">
+        <section class="control-block prompt-block" x-show="supportsControl('prompt')" x-cloak>
           <label x-text="gen.mode === 'edit' ? 'Edit instruction' : 'Prompt'"></label>
           <textarea x-model="gen.prompt" rows="4"
                     @keydown.cmd.enter.prevent="submitGenerate()" @keydown.ctrl.enter.prevent="submitGenerate()"
@@ -307,9 +202,14 @@
                   x-text="'⚠ over ~' + promptSoftLimit + ' chars — the tokenizer may truncate'"></span>
           </div>
         </section>
+        <section class="control-block model-managed-note" x-show="selectedModel && !supportsControl('prompt')" x-cloak>
+          <span>Model-managed workflow</span>
+          <strong>No prompt needed.</strong>
+          <p>Provide the source image below. This model handles restoration and upscaling with its own tuned settings.</p>
+        </section>
 
         <!-- Input image (img2img mode only) -->
-        <section class="control-block" x-show="gen.mode==='img2img' || gen.mode==='edit'" x-cloak>
+        <section class="control-block" x-show="(gen.mode==='img2img' || gen.mode==='edit') && supportsControl('image_strength')" x-cloak>
           <label>
             Input image
             <span class="muted hint inline">drag · paste · click</span>
@@ -354,24 +254,8 @@
           </p>
         </section>
 
-        <!-- Negative prompt -->
-        <section class="control-block">
-          <label>
-            Negative prompt
-            <span class="muted hint inline">optional</span>
-          </label>
-          <textarea x-model="gen.negativePrompt" rows="2"
-                    placeholder="blurry, low quality, watermark, text"></textarea>
-          <p class="muted hint" x-show="!selectedModel?.apple_optimized">
-            Used with classifier-free guidance on dev models.
-          </p>
-          <p class="muted hint" x-show="selectedModel?.apple_optimized || selectedModel?.family === 'flux2-klein' || selectedModel?.family === 'flux1-schnell'">
-            Distilled klein/schnell models pin guidance to 1.0 — negative has little effect here. Kept for parity with dev models.
-          </p>
-        </section>
-
         <!-- Aspect ratio -->
-        <section class="control-block">
+        <section class="control-block" x-show="supportsControl('aspect_ratio')" x-cloak>
           <label>Aspect ratio</label>
           <!-- Fixed-output models (Cloudflare FLUX schnell, Gemini) ignore
                width/height — show a note instead of the (no-op) ratio grid. -->
@@ -394,8 +278,20 @@
           </div>
         </section>
 
+        <button class="advanced-toggle" :class="{active: gen.advancedOpen}" @click="gen.advancedOpen=!gen.advancedOpen">
+          <span><b>Fine tune</b><small>Defaults already match <span x-text="selectedModel?.family_label || 'this model'"></span></small></span>
+          <span x-text="gen.advancedOpen ? 'Hide controls −' : 'Advanced controls +' "></span>
+        </button>
+
+        <!-- Negative prompt -->
+        <section class="control-block advanced-control" x-show="gen.advancedOpen && supportsControl('negative_prompt')" x-cloak>
+          <label>Negative prompt <span class="muted hint inline">optional</span></label>
+          <textarea x-model="gen.negativePrompt" rows="2" placeholder="blurry, low quality, watermark, text"></textarea>
+          <p class="muted hint">Describe details this model should avoid.</p>
+        </section>
+
         <!-- Steps -->
-        <section class="control-block">
+        <section class="control-block advanced-control" x-show="gen.advancedOpen && supportsControl('steps')" x-cloak>
           <label>
             Steps
             <input type="number" min="1" max="50" step="1" x-model.number="gen.steps" class="num-input" />
@@ -417,7 +313,7 @@
         </section>
 
         <!-- Guidance -->
-        <section class="control-block">
+        <section class="control-block advanced-control" x-show="gen.advancedOpen && supportsControl('guidance')" x-cloak>
           <label>
             Guidance
             <input type="number" min="0" max="10" step="0.01" x-model.number="gen.guidance" class="num-input" />
@@ -440,7 +336,7 @@
         </section>
 
         <!-- Seed -->
-        <section class="control-block">
+        <section class="control-block advanced-control" x-show="gen.advancedOpen && supportsControl('seed')" x-cloak>
           <label>
             Seed
             <input type="number" x-model.number="gen.seed" placeholder="-1" class="num-input num-input-wide" />
@@ -460,7 +356,7 @@
         </section>
 
         <!-- Batch -->
-        <section class="control-block">
+        <section class="control-block advanced-control" x-show="gen.advancedOpen && supportsControl('batch')" x-cloak>
           <label>
             Batch
             <input type="number" min="1" max="8" step="1" x-model.number="gen.batchCount" class="num-input" />
@@ -482,7 +378,7 @@
         </section>
 
         <!-- Runtime quantization (only for non-pre-quantized models) -->
-        <section class="control-block" x-show="canRuntimeQuant">
+        <section class="control-block advanced-control" x-show="gen.advancedOpen && supportsControl('runtime_quantization') && canRuntimeQuant" x-cloak>
           <label>Runtime quantization (full checkpoints only)</label>
           <select x-model.number="gen.quantize">
             <option :value="null">none (full precision)</option>
@@ -494,7 +390,7 @@
         </section>
 
         <!-- LoRAs -->
-        <section class="control-block">
+        <section class="control-block advanced-control" x-show="gen.advancedOpen && supportsControl('loras')" x-cloak>
           <label>
             LoRAs
             <button class="link small" @click="refreshLoras()">↻ refresh</button>
@@ -546,6 +442,15 @@
             </p>
           </details>
         </section>
+
+        <div class="generation-recipe" x-show="selectedModel" x-cloak>
+          <span>Current recipe</span>
+          <b x-show="supportsControl('aspect_ratio')" x-text="gen.width + '×' + gen.height"></b>
+          <b x-show="supportsControl('steps')" x-text="gen.steps + ' steps'"></b>
+          <b x-show="supportsControl('guidance')" x-text="'guidance ' + gen.guidance"></b>
+          <b x-show="gen.batchCount > 1" x-text="gen.batchCount + ' variations'"></b>
+          <b x-show="!supportsControl('prompt')">model managed</b>
+        </div>
 
         <button class="primary large generate-btn"
                 @click="submitGenerate()"
@@ -655,19 +560,19 @@
           <!-- Detail chips -->
           <div class="result-details" x-show="gen.currentJob?.params">
             <span class="detail" x-show="gen.currentJob?.params?.width">
-              <span class="detail-k">Size</span><span class="detail-v" x-text="gen.currentJob.params.width + '×' + gen.currentJob.params.height"></span>
+              <span class="detail-k">Size</span><span class="detail-v" x-text="gen.currentJob?.params ? gen.currentJob.params.width + '×' + gen.currentJob.params.height : ''"></span>
             </span>
             <span class="detail" x-show="gen.currentJob?.resolved_seed != null">
-              <span class="detail-k">Seed</span><span class="detail-v" x-text="gen.currentJob.resolved_seed"></span>
+              <span class="detail-k">Seed</span><span class="detail-v" x-text="gen.currentJob?.resolved_seed ?? ''"></span>
             </span>
             <span class="detail" x-show="gen.currentJob?.params?.steps != null">
-              <span class="detail-k">Steps</span><span class="detail-v" x-text="gen.currentJob.params.steps"></span>
+              <span class="detail-k">Steps</span><span class="detail-v" x-text="gen.currentJob?.params?.steps ?? ''"></span>
             </span>
             <span class="detail" x-show="gen.currentJob?.params?.guidance != null">
-              <span class="detail-k">Guidance</span><span class="detail-v" x-text="gen.currentJob.params.guidance"></span>
+              <span class="detail-k">Guidance</span><span class="detail-v" x-text="gen.currentJob?.params?.guidance ?? ''"></span>
             </span>
             <span class="detail" x-show="gen.currentJob?.duration_seconds != null">
-              <span class="detail-k">Time</span><span class="detail-v" x-text="formatDuration(gen.currentJob.duration_seconds)"></span>
+              <span class="detail-k">Time</span><span class="detail-v" x-text="gen.currentJob?.duration_seconds != null ? formatDuration(gen.currentJob.duration_seconds) : ''"></span>
             </span>
           </div>
 
@@ -747,434 +652,228 @@
     </div>
   </main>
 
-  <!-- ─────────── MODELS ─────────── -->
-  <main x-show="tab==='models'" class="page">
-    <section class="page-head">
-      <h1>Models</h1>
-
-      <!-- ─── Local / Cloud scope tabs ─── -->
-      <div class="model-scope-tabs" role="tablist" aria-label="Model type">
-        <button class="model-scope-tab" role="tab"
-                :class="{active: modelScope==='local'}"
-                :aria-selected="modelScope==='local'"
-                @click="setModelScope('local')">
-          <span class="model-scope-icon">🖥</span> Local
-          <span class="model-scope-count" x-text="localModelCount"></span>
+  <!-- ─────────── MODELS: FAMILY LIBRARY ─────────── -->
+  <main x-show="tab==='models'" class="page models-page">
+    <section class="models-hero">
+      <div class="models-hero-copy">
+        <span class="models-eyebrow">Model library</span>
+        <h1>Choose a family. Then choose your fit.</h1>
+        <p x-show="modelScope==='local'">Open a family to compare its speed, quality, download size, and memory needs.</p>
+        <p x-show="modelScope==='cloud'" x-cloak>Compare hosted providers and connect a key only when one is required.</p>
+      </div>
+      <div class="model-scope-tabs" role="tablist" aria-label="Model location">
+        <button class="model-scope-tab" role="tab" :class="{active: modelScope==='local'}"
+                :aria-selected="modelScope==='local'" @click="setModelScope('local')">
+          <span>On this Mac</span><span class="model-scope-count" x-text="localModelCount"></span>
         </button>
-        <button class="model-scope-tab" role="tab"
-                :class="{active: modelScope==='cloud'}"
-                :aria-selected="modelScope==='cloud'"
-                @click="setModelScope('cloud')">
-          <span class="model-scope-icon">☁</span> Cloud
-          <span class="model-scope-count" x-text="cloudModelCount"></span>
+        <button class="model-scope-tab" role="tab" :class="{active: modelScope==='cloud'}"
+                :aria-selected="modelScope==='cloud'" @click="setModelScope('cloud')">
+          <span>In the cloud</span><span class="model-scope-count" x-text="cloudModelCount"></span>
         </button>
       </div>
+    </section>
 
-      <p class="muted" x-show="modelScope==='local'">
-        Models that <strong>download and run on this Mac</strong> (Apple Silicon / MLX).
-        Greyed-out rows aren't downloaded yet — click <em>Download</em> to fetch one to
-        your HF cache. Downloads resume automatically if interrupted.
-      </p>
-      <p class="muted" x-show="modelScope==='cloud'" x-cloak>
-        Models that <strong>generate on a hosted API</strong> — no download, no local GPU,
-        nothing to install. Most are free or free-trial; some need a one-time API key
-        (set in <a class="link-accent" @click="tab='settings'">Settings → Cloud provider keys</a>).
-        Your prompt is sent to the provider's servers.
-      </p>
+    <section class="model-commandbar" x-cloak>
+      <div class="model-search-wrap">
+        <span class="model-search-icon" aria-hidden="true">⌕</span>
+        <input type="search" class="library-search" x-model="modelFilters.search"
+               placeholder="Search families, models, or use cases">
+      </div>
+      <div class="model-command-actions">
+        <span class="model-result-count" x-text="filteredModelTotalCount + ' models'"></span>
+        <button class="model-filter-button" x-show="modelScope==='local'"
+                :class="{active: modelFilters.fitsMyMac}" @click="toggleFitsMyMacFilter()">Fits this Mac</button>
+        <button class="model-filter-button" :class="{active: modelFilters.advancedOpen || hasActiveFilters}"
+                @click="modelFilters.advancedOpen = !modelFilters.advancedOpen">
+          Filters <span x-show="hasActiveFilters">•</span>
+        </button>
+      </div>
+      <div class="model-quick-filters">
+        <template x-for="cap in availableCapabilities" :key="cap">
+          <button class="model-quick-chip" :class="{active: isCapFiltered(cap)}"
+                  @click="toggleCapabilityFilter(cap)" x-text="capabilityLabel(cap)"></button>
+        </template>
+        <button class="model-quick-chip" x-show="modelScope==='local'"
+                :class="{active: isStatusFiltered('cached')}"
+                @click="toggleStatusFilter('cached')">Downloaded</button>
+        <button class="clear-filter-link" x-show="hasActiveFilters" @click="clearAllFilters()">Clear all</button>
+      </div>
+    </section>
 
-      <!-- ─── Your-Mac banner (Tier 1 hardware fit) ─── -->
-      <!-- Reads /api/system once on init. Shows chip + RAM so the per-card
-           fit chips have a clear "compared to what?" anchor. -->
-      <!-- ─── Hardware planner: RAM slider + live fit (LOCAL only) ─── -->
-      <div class="ram-planner" x-cloak x-show="modelScope==='local'">
-        <div class="ram-planner-head">
-          <span class="your-mac-icon">🖥</span>
-          <span x-show="system.unified_memory_gb">
-            Detected:
-            <strong x-text="system.chip || 'Apple Silicon'"></strong>
-            · <strong><span x-text="system.unified_memory_gb"></span> GB</strong> unified memory
-          </span>
-          <span x-show="!system.unified_memory_gb" class="muted">
-            Couldn't detect your Mac's RAM — set a budget below to score model fit.
-          </span>
-          <span class="ram-planner-spacer"></span>
-          <span class="ram-budget-pill" :class="{ preview: !ramIsDetected }">
-            Planning for <strong><span x-text="ramGb"></span> GB</strong>
-            <span class="muted small" x-show="!ramIsDetected">· preview</span>
-            <span class="muted small" x-show="ramIsDetected && system.unified_memory_gb">· your Mac</span>
-          </span>
-        </div>
-
-        <div class="ram-slider-row">
-          <input class="ram-slider" type="range" min="8" max="512" step="1"
-                 :value="ramGb" @input="setRam($event.target.value)"
-                 aria-label="Unified memory budget in GB">
-          <div class="ram-entry">
-            <input class="ram-num" type="number" min="1" max="1024" step="1"
-                   :value="ramGb" @input="setRam($event.target.value)"
-                   aria-label="Unified memory budget (number)">
-            <span class="muted small">GB</span>
+    <section class="model-advanced" x-show="modelFilters.advancedOpen" x-cloak>
+      <div class="advanced-grid">
+        <div class="advanced-block" x-show="modelScope==='local'">
+          <div class="advanced-label">Plan for memory</div>
+          <div class="compact-device-line">
+            <span x-show="system.unified_memory_gb">
+              <strong x-text="system.chip || 'Apple Silicon'"></strong> ·
+              <strong><span x-text="ramGb"></span> GB</strong>
+              <span class="muted" x-show="ramIsDetected"> detected</span>
+            </span>
+            <span x-show="!system.unified_memory_gb">Planning for <strong><span x-text="ramGb"></span> GB</strong></span>
           </div>
-          <button class="btn ghost small ram-reset" x-show="system.unified_memory_gb && !ramIsDetected"
-                  @click="resetRamToDetected()" title="Snap back to your Mac's detected RAM">
-            ↩ My Mac (<span x-text="system.unified_memory_gb"></span> GB)
-          </button>
+          <div class="ram-tiers compact-ram-tiers">
+            <template x-for="t in ramTiers" :key="t">
+              <button class="chip ram-tier" :class="{active: ramGb === t}" @click="setRam(t)" x-text="t + ' GB'"></button>
+            </template>
+          </div>
         </div>
-
-        <div class="ram-tiers">
-          <template x-for="t in ramTiers" :key="t">
-            <button class="chip ram-tier" :class="{ active: ramGb === t }"
-                    @click="setRam(t)" x-text="t + ' GB'"></button>
-          </template>
+        <div class="advanced-block">
+          <div class="advanced-label">Availability and format</div>
+          <div class="advanced-chip-row" x-show="modelScope==='local'">
+            <button class="model-quick-chip" :class="{active: isStatusFiltered('cached')}"
+                    @click="toggleStatusFilter('cached')">Downloaded</button>
+            <button class="model-quick-chip" :class="{active: isStatusFiltered('partial')}"
+                    @click="toggleStatusFilter('partial')">Partial</button>
+            <button class="model-quick-chip" :class="{active: isStatusFiltered('absent')}"
+                    @click="toggleStatusFilter('absent')">Not downloaded</button>
+            <button class="model-quick-chip" :class="{active: modelFilters.mlxOnly}"
+                    @click="toggleMlxFilter()" title="Only weights already converted and compressed for MLX.">
+              Pre-quantized MLX
+            </button>
+          </div>
+          <select x-model="modelFilters.sortBy" class="library-sort">
+            <option value="default">Variants: smallest first</option>
+            <option value="name">Variants: name</option>
+            <option value="size-desc">Variants: largest first</option>
+          </select>
         </div>
+        <div class="advanced-block" x-show="modelScope==='local'">
+          <div class="advanced-label">Memory fit at <span x-text="ramGb"></span> GB</div>
+          <div class="seg fit-seg">
+            <button :class="{active: modelFilters.fitLevel==='all'}" @click="modelFilters.fitLevel='all'">All</button>
+            <button :class="{active: modelFilters.fitLevel==='ok'}" @click="modelFilters.fitLevel='ok'">Fits</button>
+            <button :class="{active: modelFilters.fitLevel==='tight'}" @click="modelFilters.fitLevel='tight'">Tight</button>
+            <button :class="{active: modelFilters.fitLevel==='over'}" @click="modelFilters.fitLevel='over'">Over</button>
+          </div>
+          <details class="model-terms">
+            <summary>MLX, MPS, 4-bit, and gated explained</summary>
+            <p><strong>Apple MLX</strong> is the native runtime used by mflux. Pre-quantized MLX weights load fastest.</p>
+            <p><strong>PyTorch / MPS</strong> runs Diffusers models through Apple's Metal GPU support.</p>
+            <p><strong>4-bit and 8-bit</strong> trade a little precision for smaller downloads and lower memory use.</p>
+            <p><strong>Gated</strong> models require license acceptance and a Hugging Face token.</p>
+          </details>
+        </div>
+      </div>
+    </section>
 
-        <p class="muted small ram-planner-note">
-          Drag, type, or tap a tier to preview a machine — every fit chip and the picks below re-score instantly.
+    <div class="library-empty" x-show="filteredModelTotalCount === 0 && models.length > 0" x-cloak>
+      <span class="empty-orbit">0</span>
+      <h2>No families match</h2>
+      <p class="muted">Try clearing one of the active filters.</p>
+      <button class="btn ghost" @click="clearAllFilters()">Clear all filters</button>
+    </div>
+
+    <section class="family-library" x-show="filteredModelTotalCount > 0" x-cloak>
+      <div class="family-library-heading">
+        <div>
+          <span class="models-eyebrow" x-text="modelScope === 'local' ? 'Local families' : 'Cloud providers'"></span>
+          <h2 x-text="visibleFamilies.length + (modelScope === 'cloud' ? (visibleFamilies.length === 1 ? ' provider' : ' providers') : (visibleFamilies.length === 1 ? ' family' : ' families'))"></h2>
+        </div>
+        <p class="muted" x-show="modelScope==='local' && system.unified_memory_gb">
+          Sorted for <strong><span x-text="system.chip"></span> · <span x-text="ramGb"></span> GB</strong>
         </p>
       </div>
 
-      <!-- ─── ✨ Best for your RAM — live, per-lane recommendations (LOCAL only) ─── -->
-      <div class="best-picks" x-show="modelScope==='local' && bestPicks.length" x-cloak>
-        <div class="best-picks-head">
-          <h2>✨ Best for <span x-text="ramGb"></span> GB</h2>
-          <span class="muted small">The model in each lane that best fits your budget — updates as you move the slider. Click a card to find it below.</span>
-        </div>
-        <div class="best-picks-grid">
-          <template x-for="p in bestPicks" :key="p.id">
-            <article class="best-pick-card"
-                     @click="modelFilters.search = p.model.repo; modelFilters.fitLevel = 'all'"
-                     :title="'Find ' + p.model.label + ' in the list below'">
-              <div class="best-pick-lane"><span x-text="p.icon"></span> <span x-text="p.label"></span></div>
-              <div class="best-pick-model" x-text="p.model.label"></div>
-              <div class="best-pick-meta">
-                <span class="chip" :class="cacheChipClass(p.model.cache?.state || 'absent')" x-text="cacheChipLabel(p.model.cache?.state || 'absent')"></span>
-                <span class="chip" :class="'fit-' + fitFor(p.model.min_unified_memory_gb).state"
-                      x-text="fitChipLabel(fitFor(p.model.min_unified_memory_gb))"></span>
-                <span class="muted small" x-text="formatGb(p.model.size_gb) + ' · ≥' + p.model.min_unified_memory_gb + ' GB'"></span>
-              </div>
-            </article>
-          </template>
-        </div>
-      </div>
-
-      <details class="primer" x-show="modelScope==='local'">
-        <summary>📚 New here? What does 4B / 4-bit / MLX / gated mean?</summary>
-        <div class="primer-body">
-          <h3>Anatomy of a model name</h3>
-          <p>A name like <code>FLUX.2 klein 4B — MLX 4-bit</code> tells you four things:</p>
-          <ul>
-            <li><strong>FLUX.2 klein</strong> — the model family (klein is a distilled, fast variant of FLUX.2)</li>
-            <li><strong>4B</strong> — 4 billion parameters; the "size" of the model. Bigger usually means more detail and broader knowledge but more memory and slower generation.</li>
-            <li><strong>MLX</strong> — Apple's machine learning framework. Models marked MLX are pre-quantized and tuned for Apple Silicon's unified memory; they load fast and use memory efficiently.</li>
-            <li><strong>4-bit</strong> — how precisely each number in the model is stored.</li>
-          </ul>
-
-          <h3>What does "X-bit" mean for quality?</h3>
-          <p>
-            The model's billions of numbers can be stored at different precisions. Lower-bit
-            versions are smaller files and use less memory, at a small quality cost.
-          </p>
-          <ul>
-            <li><strong>Full</strong> (no bit tag) — the original 16-bit-per-number weights. Highest fidelity, biggest file.</li>
-            <li><strong>8-bit</strong> — about half the size of full. Near-original quality. Sweet spot if you have plenty of memory.</li>
-            <li><strong>6-bit</strong> — smaller still. Subtle quality loss, usually fine for most prompts.</li>
-            <li><strong>4-bit</strong> — about a quarter the size. Visible quality loss on close inspection but the speed and memory savings are huge — recommended starting point on 8–16 GB Macs.</li>
-            <li><strong>3-bit</strong> — smallest. Noticeable quality loss. Use only when memory is tight.</li>
-          </ul>
-
-          <h3>Distilled vs full ("klein/schnell" vs "dev")</h3>
-          <p>
-            Some FLUX models are <em>distilled</em>: trained to produce a finished image in just
-            1–4 denoising <em>steps</em>. They're fast but ignore the <em>guidance</em> control internally
-            (locked to 1.0). Examples: <code>FLUX.2 klein</code>, <code>FLUX.1 schnell</code>.
-          </p>
-          <p>
-            <em>Dev</em> models (<code>FLUX.1 dev</code>, <code>FLUX.2 dev</code>) need 20–30 steps and respond
-            to guidance properly. Higher quality, slower, larger.
-          </p>
-
-          <h3>What does each chip mean?</h3>
-          <ul>
-            <li><span class="chip ok">cached</span> All files for this model are on disk and ready to generate from.</li>
-            <li><span class="chip warn">partial</span> Some files have downloaded but the model isn't usable yet. Click Download again to resume.</li>
-            <li><span class="chip">not downloaded</span> No files for this model are on disk. Click Download to fetch them.</li>
-            <li><span class="chip neutral">gated</span> The model's repo on Hugging Face requires you to accept a license and provide a personal access token. You'll be prompted for the token in the Download dialog.</li>
-            <li><span class="chip neutral">mlx</span> Pre-quantized for Apple Silicon. Loads fast, runs efficiently on M-series chips. If you see this chip, it's a good pick for Mac.</li>
-          </ul>
-
-          <h3>Which one should I pick first?</h3>
-          <p>
-            On any Apple Silicon Mac with ≥8 GB unified memory: start with
-            <code>AITRADER/FLUX2-klein-4B-mlx-4bit</code>. ~2.3 GB on disk, fast loads,
-            ungated. If quality matters more than speed and you have ≥16 GB: try the MLX 8-bit.
-          </p>
-        </div>
-      </details>
-    </section>
-
-    <!-- ─── Library filter toolbar ─── -->
-    <section class="library-toolbar" x-cloak>
-      <div class="library-toolbar-row">
-        <input type="search"
-               class="library-search"
-               x-model="modelFilters.search"
-               placeholder="🔍 Search by name, repo, or 'best for'…">
-        <select x-model="modelFilters.sortBy" class="library-sort">
-          <option value="default">Sort: default (family · size)</option>
-          <option value="name">Sort: name (A–Z)</option>
-          <option value="size-asc">Sort: size (small → large)</option>
-          <option value="size-desc">Sort: size (large → small)</option>
-        </select>
-        <div class="library-meta">
-          <span class="muted small" x-text="'Showing ' + filteredModelTotalCount + ' of ' + scopedModelCount"></span>
-          <button class="btn ghost small" x-show="hasActiveFilters" @click="clearAllFilters()">✕ Clear filters</button>
-          <!-- Bulk expand/collapse — operates on the currently-filtered list -->
-          <button class="btn ghost small" @click="expandAllVisible()" title="Show details on every visible card">▾ Expand all</button>
-          <button class="btn ghost small" @click="collapseAllVisible()" title="Hide details on every card">▴ Collapse all</button>
-        </div>
-      </div>
-
-      <div class="library-toolbar-row filter-chips-row">
-        <span class="filter-label">Family</span>
-        <template x-for="fam in availableFamilies" :key="fam.id">
-          <button class="chip filter-chip"
-                  :class="{active: isFamilyFiltered(fam.id)}"
-                  @click="toggleFamilyFilter(fam.id)"
-                  x-text="fam.label"></button>
-        </template>
-      </div>
-
-      <div class="library-toolbar-row filter-chips-row" x-show="modelScope==='local'">
-        <span class="filter-label">Status</span>
-        <button class="chip filter-chip status-cached"
-                :class="{active: isStatusFiltered('cached')}"
-                @click="toggleStatusFilter('cached')">✓ Cached</button>
-        <button class="chip filter-chip"
-                :class="{active: isStatusFiltered('partial')}"
-                @click="toggleStatusFilter('partial')">⏳ Partial</button>
-        <button class="chip filter-chip"
-                :class="{active: isStatusFiltered('absent')}"
-                @click="toggleStatusFilter('absent')">⚪ Not downloaded</button>
-        <button class="chip filter-chip status-ready"
-                :class="{active: isStatusFiltered('engine-ready')}"
-                @click="toggleStatusFilter('engine-ready')"
-                title="Cached AND the engine's runtime packages are installed">🚀 Ready to generate</button>
-      </div>
-
-      <div class="library-toolbar-row filter-chips-row" x-show="availableCapabilities.length > 0">
-        <span class="filter-label">Capability</span>
-        <template x-for="cap in availableCapabilities" :key="cap">
-          <button class="chip filter-chip"
-                  :class="{active: isCapFiltered(cap)}"
-                  @click="toggleCapabilityFilter(cap)"
-                  x-text="cap"></button>
-        </template>
-      </div>
-
-      <!-- ─── Hardware + format filters (v1.1.2 / RAM planner) ─── -->
-      <!-- Segmented RAM-fit filter — scored live against the RAM slider above.
-           Mirrors the Chat Studio model-tab control for a consistent look. -->
-      <div class="library-toolbar-row filter-chips-row" x-show="modelScope==='local'">
-        <span class="filter-label">RAM fit</span>
-        <div class="seg fit-seg">
-          <button :class="{active: modelFilters.fitLevel==='all'}"   @click="modelFilters.fitLevel='all'">All</button>
-          <button :class="{active: modelFilters.fitLevel==='ok'}"    @click="modelFilters.fitLevel='ok'"    title="Comfortable headroom at your RAM budget">✓ Fits</button>
-          <button :class="{active: modelFilters.fitLevel==='tight'}" @click="modelFilters.fitLevel='tight'" title="Meets the floor but no headroom — close other apps">⚠ Tight</button>
-          <button :class="{active: modelFilters.fitLevel==='over'}"  @click="modelFilters.fitLevel='over'"  title="Exceeds your RAM budget — would swap or fail to load">✗ Over</button>
-        </div>
-        <span class="muted small">at <strong x-text="ramGb + ' GB'"></strong></span>
-      </div>
-
-      <div class="library-toolbar-row filter-chips-row" x-show="modelScope==='local'">
-        <span class="filter-label">Quick</span>
-        <button class="chip filter-chip filter-chip-mlx"
-                :class="{active: modelFilters.mlxOnly}"
-                @click="toggleMlxFilter()"
-                title="Show only models pre-quantized for Apple Silicon's MLX framework — fastest loads, smallest footprint on M-series Macs.">
-          🍎 Apple Silicon (MLX) only
-        </button>
-      </div>
-    </section>
-
-    <!-- Empty state when filters return nothing -->
-    <!-- Lists every active filter so you can see what cut the results and
-         tap individual filters off without losing the others. -->
-    <div class="library-empty" x-show="filteredModelTotalCount === 0 && models.length > 0" x-cloak>
-      <p class="muted">No models match your filters.</p>
-      <p class="library-empty-active-filters" x-show="activeFilterSummary().length > 0">
-        <span class="muted small">Active filters (click to remove):</span>
-        <template x-for="af in activeFilterSummary()" :key="af.label">
-          <button class="chip library-empty-chip"
-                  @click="af.removeFn()"
-                  :title="'Remove this filter: ' + af.label">
-            <span x-text="af.label"></span>
-            <span class="library-empty-chip-x">✕</span>
-          </button>
-        </template>
-      </p>
-      <button class="btn ghost" @click="clearAllFilters()">✕ Clear all filters</button>
-    </div>
-
-    <!-- Family sections — only render families that have surviving models -->
-    <template x-for="family in Object.values(families).filter(f => (filteredModelsByFamily[f.id]||[]).length > 0)" :key="family.id">
-      <section class="family">
-        <header class="family-head">
-          <button class="family-collapse-btn"
-                  @click="toggleFamilyCollapsed(family.id)"
-                  :title="isFamilyCollapsed(family.id) ? 'Expand' : 'Collapse'"
-                  x-text="isFamilyCollapsed(family.id) ? '▸' : '▾'"></button>
-          <div class="family-head-text">
-            <h2>
-              <span x-text="family.label"></span>
-              <span class="muted small" x-text="'(' + (filteredModelsByFamily[family.id]||[]).length + ')'"></span>
-            </h2>
-            <p class="muted" x-text="family.summary" x-show="!isFamilyCollapsed(family.id)"></p>
-          </div>
-        </header>
-
-        <div x-show="!isFamilyCollapsed(family.id)" x-cloak>
-          <details class="how">
-            <summary>How to use this family</summary>
-            <p x-text="family.how_to_use"></p>
-          </details>
-
-          <div class="model-list">
-          <template x-for="m in filteredModelsByFamily[family.id] || []" :key="m.repo">
-            <article class="model-card" :class="cardClass(m)">
-              <div class="model-meta">
-                <h3>
-                  <span x-text="m.label"></span>
-                  <span class="chip"
-                    :class="cacheChipClass(m.cache.state)"
-                    :title="chipExplain(m.cache.state)"
-                    x-text="cacheChipLabel(m.cache.state)"></span>
-                  <span class="chip neutral" x-show="m.gated"
-                    title="Hugging Face requires you to accept a license and provide a personal access token before downloading this repo.">gated</span>
-                  <span class="chip neutral" x-show="m.apple_optimized"
-                    title="Pre-quantized for Apple Silicon's MLX framework. Loads fast and uses unified memory efficiently on M-series chips.">MLX</span>
-                  <!-- Fit chip — scored LIVE against the RAM slider. -->
-                  <span class="chip"
-                        x-show="m.min_unified_memory_gb"
-                        :class="'fit-' + fitFor(m.min_unified_memory_gb).state"
-                        :title="fitFor(m.min_unified_memory_gb).hint"
-                        x-text="fitChipLabel(fitFor(m.min_unified_memory_gb))"></span>
-                </h3>
-                <p class="repo"><code x-text="m.repo"></code></p>
-                <p class="size-line">
-                  <span class="size-big" x-text="formatGb(m.size_gb)"></span>
-                  <span class="muted">download</span>
-                  ·
-                  <span class="muted" x-text="'≥' + m.min_unified_memory_gb + ' GB unified mem'"></span>
-                </p>
-                <p class="hw" x-text="m.recommended_hardware"></p>
-                <p class="capabilities-row" x-show="m.capabilities && m.capabilities.length">
-                  <template x-for="c in (m.capabilities || [])" :key="c">
-                    <span class="chip cap" :title="capabilityHint(c)" x-text="capabilityLabel(c)"></span>
+      <div class="family-stack">
+        <template x-for="family in visibleFamilies" :key="family.id">
+          <article class="family-panel" :class="[familyTone(family), {'is-open': isFamilyOpen(family.id)}]">
+            <button class="family-panel-trigger" @click="toggleFamilyOpen(family.id)"
+                    :aria-expanded="isFamilyOpen(family.id)">
+              <span class="family-monogram" x-text="family.label.slice(0, 2).toUpperCase()"></span>
+              <span class="family-panel-copy">
+                <span class="family-title-line">
+                  <strong x-text="family.label"></strong>
+                  <span class="family-recommended" x-show="isRecommendedFamily(family)">Best match</span>
+                  <span class="family-cached" x-show="familyCachedCount(family) > 0"
+                        x-text="familyCachedCount(family) + ' ready'"></span>
+                </span>
+                <span class="family-summary" x-text="family.summary"></span>
+                <span class="family-facts">
+                  <span x-text="family.models.length + (family.models.length === 1 ? ' option' : ' options')"></span>
+                  <span x-text="familyRuntimeLabel(family)"></span>
+                  <span x-text="familyMemoryLabel(family)"></span>
+                  <template x-for="cap in familyCapabilities(family)" :key="cap">
+                    <span x-text="capabilityLabel(cap)"></span>
                   </template>
-                  <!-- LOCAL-engine status chip — 3 states: ready / deps-ok-but-not-wired / missing deps. -->
-                  <span class="chip engine-ready"
-                        x-show="!m.is_cloud && m.cache.state==='cached' && isModelReady(m.repo)"
-                        title="This model's engine is installed and wired up. Ready to generate.">
-                    ✓ engine ready
-                  </span>
-                  <span class="chip engine-pending"
-                        x-show="!m.is_cloud && m.cache.state==='cached' && !isModelReady(m.repo) && modelDepsOk(m.repo)"
-                        title="Packages are installed, but the backend worker for this family isn't shipped yet. Coming in a future Phase.">
-                    🕓 worker in roadmap
-                  </span>
-                  <span class="chip engine-missing"
-                        x-show="!m.is_cloud && m.cache.state==='cached' && !modelDepsOk(m.repo)"
-                        :title="'Missing packages: ' + (modelMissingDeps(m.repo) || []).join(', ') + '. Click for details.'"
-                        @click="tab='generate'">
-                    ⚠ engine needs install
-                  </span>
-                  <!-- CLOUD readiness chip — runs in the cloud, so readiness is
-                       about the API credential, not local engine/deps. -->
-                  <span class="chip engine-ready"
-                        x-show="m.is_cloud && m.cloud_credentials_ok !== false && (m.fit && m.fit.state) !== 'needs_billing'"
-                        title="Runs in the cloud — ready to generate.">
-                    ☁ cloud ready
-                  </span>
-                  <span class="chip engine-missing"
-                        x-show="m.is_cloud && m.cloud_credentials_ok === false"
-                        :title="(m.fit && m.fit.hint) || 'Add the required API credential in Settings to use this cloud model.'"
-                        @click="tab='settings'">
-                    🔑 needs API key
-                  </span>
-                  <!-- Billing-gated cloud model (Gemini): key is set but the
-                       account needs billing enabled. -->
-                  <span class="chip engine-missing"
-                        x-show="m.is_cloud && (m.fit && m.fit.state) === 'needs_billing'"
-                        :title="(m.fit && m.fit.hint) || 'This model needs billing enabled on your account.'"
-                        @click="tab='generate'; gen.repo=m.repo">
-                    💳 needs billing
-                  </span>
-                  <!-- Provider link — opens the provider's API page (where you get
-                       the key, or learn more for keyless Pollinations). Shown for
-                       every cloud model. -->
-                  <a class="chip provider-link"
-                     x-show="m.is_cloud && m.cloud_signup_url"
-                     :href="m.cloud_signup_url" target="_blank" rel="noopener" @click.stop
-                     :title="'Open ' + (m.cloud_provider_label || 'this provider') + ' — get your API key / learn more'"
-                     x-text="'via ' + (m.cloud_provider_label || 'cloud') + ' ↗'"></a>
-                </p>
-                <!-- ─── Collapsible details (v1.1.2) ─── -->
-                <!-- Cards default to compact; the toggle below expands to show
-                     best_for + use_cases + saved-loc. Keeps the gallery
-                     scannable when there are 20+ models on screen. -->
-                <div class="model-details" x-show="isModelExpanded(m.repo)" x-cloak>
-                  <p class="best-for" x-show="m.best_for">
-                    <strong>Best for:</strong> <span x-text="m.best_for"></span>
-                  </p>
+                </span>
+              </span>
+              <span class="family-chevron" x-text="isFamilyOpen(family.id) ? '−' : '+'"></span>
+            </button>
 
-                  <!-- Structured use cases — ✅ good / ⚠️ weak / ❌ avoid -->
-                  <ul class="use-case-list" x-show="m.use_cases && m.use_cases.length > 0">
-                    <template x-for="uc in (m.use_cases || [])" :key="uc.text">
-                      <li :class="'use-case-' + uc.kind">
-                        <span class="use-case-icon" x-text="useCaseIcon(uc.kind)"></span>
-                        <span x-text="uc.text"></span>
-                      </li>
-                    </template>
-                  </ul>
-                  <p class="saved-loc" x-show="m.cache.state==='cached' && m.cache.path">
-                    <small>📁 Saved at <code x-text="m.cache.path"></code></small>
-                    <button class="link small" @click="revealInFolder(m.cache.path)" title="Open this folder in Finder">📂 Reveal in Finder</button>
-                  </p>
-                </div>
-
-                <!-- Toggle — always visible, label flips based on state -->
-                <button class="model-details-toggle"
-                        @click="toggleModelExpanded(m.repo)"
-                        :title="isModelExpanded(m.repo) ? 'Hide details' : 'Show \"best for\", use cases, and saved location'">
-                  <span x-show="!isModelExpanded(m.repo)">▾ Show details</span>
-                  <span x-show="isModelExpanded(m.repo)">▴ Hide details</span>
-                </button>
+            <div class="family-panel-body" x-show="isFamilyOpen(family.id)" x-cloak>
+              <div class="family-guidance"><span>Good to know</span><p x-text="family.how_to_use"></p></div>
+              <div class="variant-table-head" :class="{'is-cloud': modelScope==='cloud'}">
+                <span>Option</span><span>Runs with</span>
+                <span x-text="modelScope === 'cloud' ? 'Access' : 'Download'"></span>
+                <span x-show="modelScope==='local'">Memory</span><span></span>
               </div>
-              <div class="model-actions">
-                <template x-if="m.cache.state === 'cached'">
-                  <span class="ok-text">✓ cached</span>
-                </template>
-
-                <template x-if="m.cache.state !== 'cached' && !m.active_download">
-                  <button class="primary" @click="confirmDownload(m)">
-                    <span>⬇</span> Download
-                  </button>
-                </template>
-
-                <template x-if="m.active_download">
-                  <div class="dl-inline">
-                    <div class="bar"><div class="bar-fill" :style="`width:${m.active_download.percent || 0}%`"></div></div>
-                    <small x-text="downloadCaption(m.active_download)"></small>
-                    <button class="link danger" @click="cancelDownload(m.active_download.id)">cancel</button>
-                  </div>
+              <div class="variant-list">
+                <template x-for="m in family.models" :key="m.repo">
+                  <article class="variant-row" :class="cardClass(m)">
+                    <div class="variant-identity">
+                      <div class="variant-title-line">
+                        <h3 x-text="modelVariantLabel(m)"></h3>
+                        <span class="variant-role" x-show="modelRoleLabel(m)" x-text="modelRoleLabel(m)"></span>
+                        <span class="chip neutral" x-show="m.gated">Gated</span>
+                        <span class="chip engine-pending" x-show="m.runtime_compatible===false" :title="m.runtime_note">Format pending</span>
+                      </div>
+                      <div class="variant-capabilities">
+                        <template x-for="c in (m.capabilities || [])" :key="c"><span x-text="capabilityLabel(c)"></span></template>
+                      </div>
+                    </div>
+                    <div class="variant-spec" data-label="Runs with">
+                      <strong x-text="modelRuntimeLabel(m)"></strong><small x-text="modelFormatLabel(m)"></small>
+                    </div>
+                    <div class="variant-spec" :data-label="modelScope === 'cloud' ? 'Access' : 'Download'">
+                      <template x-if="!m.is_cloud"><div><strong x-text="formatGb(m.size_gb)"></strong><small x-text="cacheChipLabel(m.cache.state)"></small></div></template>
+                      <template x-if="m.is_cloud"><div><strong x-text="m.cloud_credentials_ok === false ? 'Key needed' : ((m.fit && m.fit.state) === 'needs_billing' ? 'Billing' : 'Ready')"></strong><small>No local files</small></div></template>
+                    </div>
+                    <div class="variant-spec" data-label="Memory" x-show="modelScope==='local'">
+                      <strong x-text="m.min_unified_memory_gb + ' GB+'"></strong>
+                      <span class="fit-dot" :class="'fit-' + fitFor(m.min_unified_memory_gb).state"
+                            x-text="fitChipLabel(fitFor(m.min_unified_memory_gb))"></span>
+                    </div>
+                    <div class="variant-action">
+                      <template x-if="!m.is_cloud && m.cache.state !== 'cached' && !m.active_download"><button class="primary" @click="confirmDownload(m)" :title="m.runtime_compatible===false ? m.runtime_note : ''" x-text="m.runtime_compatible===false ? 'Download only' : 'Download'"></button></template>
+                      <template x-if="!m.is_cloud && m.cache.state === 'cached'">
+                        <button class="primary use-model-button" :disabled="!isModelReady(m.repo)"
+                                @click="gen.mode=(m.capabilities.includes(gen.mode) ? gen.mode : m.capabilities[0]); gen.repo=m.repo; tab='generate'">Use model</button>
+                      </template>
+                      <template x-if="m.is_cloud">
+                        <button class="primary use-model-button"
+                                @click="m.cloud_credentials_ok === false ? tab='settings' : (gen.mode='txt2img', gen.repo=m.repo, tab='generate')"
+                                x-text="m.cloud_credentials_ok === false ? 'Add key' : 'Use model'"></button>
+                      </template>
+                      <template x-if="m.active_download"><div class="dl-inline"><div class="bar"><div class="bar-fill" :style="`width:${m.active_download.percent || 0}%`"></div></div><small x-text="downloadCaption(m.active_download)"></small><button class="link danger" @click="cancelDownload(m.active_download.id)">Cancel</button></div></template>
+                    </div>
+                    <button class="variant-details-toggle" @click="toggleModelExpanded(m.repo)"
+                            x-text="isModelExpanded(m.repo) ? 'Hide details' : 'Details'"></button>
+                    <div class="variant-details" x-show="isModelExpanded(m.repo)" x-cloak>
+                      <p class="variant-repo"><code x-text="m.repo"></code></p>
+                      <p class="best-for" x-show="m.best_for"><strong>Best for:</strong> <span x-text="m.best_for"></span></p>
+                      <p class="hw" x-show="m.recommended_hardware" x-text="m.recommended_hardware"></p>
+                      <ul class="use-case-list" x-show="m.use_cases && m.use_cases.length > 0">
+                        <template x-for="uc in (m.use_cases || [])" :key="uc.text"><li :class="'use-case-' + uc.kind"><span class="use-case-icon" x-text="useCaseIcon(uc.kind)"></span><span x-text="uc.text"></span></li></template>
+                      </ul>
+                      <div class="variant-readiness">
+                        <span class="chip engine-ready" x-show="!m.is_cloud && m.runtime_compatible!==false && m.cache.state==='cached' && isModelReady(m.repo)">Engine ready</span>
+                        <span class="chip engine-pending" x-show="!m.is_cloud && m.runtime_compatible===false" :title="m.runtime_note">Format support pending</span>
+                        <span class="chip engine-pending" x-show="!m.is_cloud && m.runtime_compatible!==false && m.cache.state==='cached' && !isModelReady(m.repo) && modelDepsOk(m.repo)">Worker in roadmap</span>
+                        <span class="chip engine-missing" x-show="!m.is_cloud && m.runtime_compatible!==false && m.cache.state==='cached' && !modelDepsOk(m.repo)">Engine needs install</span>
+                        <a class="chip provider-link" x-show="m.is_cloud && m.cloud_signup_url" :href="m.cloud_signup_url"
+                           target="_blank" rel="noopener" x-text="'Open ' + (m.cloud_provider_label || 'provider') + ' ↗'"></a>
+                      </div>
+                      <p class="saved-loc" x-show="m.cache.state==='cached' && m.cache.path"><small>Saved at <code x-text="m.cache.path"></code></small><button class="link small" @click="revealInFolder(m.cache.path)">Reveal in Finder</button></p>
+                    </div>
+                  </article>
                 </template>
               </div>
-            </article>
-          </template>
-        </div>
-        </div><!-- /family-collapse wrapper -->
-      </section>
-    </template>
+            </div>
+          </article>
+        </template>
+      </div>
+    </section>
   </main>
 
   <!-- ─────────── DOWNLOADS ─────────── -->

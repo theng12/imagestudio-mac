@@ -13,6 +13,8 @@ Serves:
 - `/api/loras`                       → list local LoRAs
 - `/api/reveal`                      → open a path in the OS file manager (macOS Finder)
 - `/api/generate/availability`       → is mflux installed? + aspect presets
+- `/api/generate/install/status`     → fixed dependency-installer progress
+- `/api/generate/install`            → install checked-in generation requirements
 - `/api/generate/txt2img`            → start a text-to-image generation
 - `/api/generate/jobs`               → list generation jobs
 - `/api/generate/jobs/{id}`          → poll one job
@@ -30,6 +32,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,7 +42,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from . import cache, catalog, loras, settings as app_settings
+from . import cache, catalog, generation_installer, loras, settings as app_settings
 from .downloads import manager
 from .generation import manager as gen_manager, diagnostics as gen_diagnostics
 from .imports import import_path, scan_for_candidates
@@ -514,6 +517,27 @@ def generation_diagnostics() -> dict:
     return data
 
 
+@app.get("/api/generate/install/status")
+def generation_install_status() -> dict:
+    """Return progress for the fixed generation-dependency installer."""
+    return generation_installer.status()
+
+
+@app.post("/api/generate/install")
+def install_generation_dependencies(request: Request) -> dict:
+    """Install the checked-in generation requirements from the Web UI.
+
+    The endpoint deliberately accepts no package names or commands. A basic
+    same-origin check prevents unrelated websites from triggering maintenance
+    against a LAN-accessible Image Studio instance.
+    """
+    origin = request.headers.get("origin")
+    host = request.headers.get("host")
+    if origin and host and urlparse(origin).netloc != host:
+        raise HTTPException(status_code=403, detail="Maintenance actions require the Image Studio origin.")
+    return generation_installer.start()
+
+
 @app.post("/api/generate/txt2img")
 def start_txt2img(body: Txt2ImgBody) -> dict:
     if not body.prompt.strip():
@@ -521,6 +545,8 @@ def start_txt2img(body: Txt2ImgBody) -> dict:
     model = catalog.get_model(body.repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {body.repo}")
+    if not model.runtime_compatible:
+        raise HTTPException(status_code=409, detail=model.runtime_note or "This model conversion is not supported by the current worker.")
     # Cloud models are an HTTP call — they need neither the local mflux engine
     # nor a Hugging Face download, so skip both gates for them.
     if not model.is_cloud:
@@ -582,6 +608,8 @@ async def start_img2img(
     model = catalog.get_model(repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {repo}")
+    if not model.runtime_compatible:
+        raise HTTPException(status_code=409, detail=model.runtime_note or "This model conversion is not supported by the current worker.")
     if cache.cache_state(repo) != "cached":
         raise HTTPException(status_code=409,
             detail=f"Model {repo} is not fully cached. Download it from the Models tab first.")
@@ -662,6 +690,8 @@ async def start_edit(
     model = catalog.get_model(repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {repo}")
+    if not model.runtime_compatible:
+        raise HTTPException(status_code=409, detail=model.runtime_note or "This model conversion is not supported by the current worker.")
     if "edit" not in (model.capabilities or ()):
         raise HTTPException(status_code=400,
             detail=f"Model {repo} does not support edit mode. Pick an edit-capable model.")
