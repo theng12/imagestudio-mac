@@ -10,6 +10,24 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.18.5] — 2026-07-10
+
+### Changed — Cloud credentials now use a compact provider picker
+
+The cloud-key settings were one long vertical form, which made finding a provider
+needlessly slow. Settings now presents five compact provider tiles with saved-state
+indicators and keeps one provider editor in focus at a time. The app header also gives
+the Studio icon and active tab a clearer, more modern treatment.
+
+### Verification
+
+- Checked the Alpine bindings and HTML structure, ran JavaScript syntax validation,
+  and verified the responsive two-column provider picker at the mobile breakpoint.
+- The underlying credential fields, save/clear actions, local storage behavior, and
+  provider API calls are unchanged.
+
+---
+
 ## [1.18.4] — 2026-07-10
 
 ### Changed — Version now shown as a badge in the top-right header (consistent across all sibling apps)

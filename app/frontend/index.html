@@ -1225,6 +1225,51 @@
         <strong>Pollinations</strong> cloud model needs no key.
       </p>
 
+      <div class="provider-picker" role="tablist" aria-label="Cloud provider credentials">
+        <button class="provider-tile" :class="{active: focusedCloudProvider==='cloudflare'}"
+                @click="focusedCloudProvider='cloudflare'" role="tab"
+                :aria-selected="focusedCloudProvider==='cloudflare'">
+          <span class="provider-tile-mark">CF</span>
+          <span><strong>Cloudflare</strong><small>Workers AI</small></span>
+          <span class="provider-tile-state" :class="cloudKeys.cloudflare_account_id_set && cloudKeys.cloudflare_api_token_set ? 'ready' : ''"
+                x-text="cloudKeys.cloudflare_account_id_set && cloudKeys.cloudflare_api_token_set ? 'Ready' : 'Add key'"></span>
+        </button>
+        <button class="provider-tile" :class="{active: focusedCloudProvider==='together'}"
+                @click="focusedCloudProvider='together'" role="tab"
+                :aria-selected="focusedCloudProvider==='together'">
+          <span class="provider-tile-mark">TO</span>
+          <span><strong>Together</strong><small>FLUX schnell</small></span>
+          <span class="provider-tile-state" :class="cloudKeys.together_api_key_set ? 'ready' : ''"
+                x-text="cloudKeys.together_api_key_set ? 'Ready' : 'Add key'"></span>
+        </button>
+        <button class="provider-tile" :class="{active: focusedCloudProvider==='gemini'}"
+                @click="focusedCloudProvider='gemini'" role="tab"
+                :aria-selected="focusedCloudProvider==='gemini'">
+          <span class="provider-tile-mark">GA</span>
+          <span><strong>Google AI</strong><small>Gemini Image</small></span>
+          <span class="provider-tile-state" :class="cloudKeys.gemini_api_key_set ? 'ready' : ''"
+                x-text="cloudKeys.gemini_api_key_set ? 'Ready' : 'Add key'"></span>
+        </button>
+        <button class="provider-tile" :class="{active: focusedCloudProvider==='nebius'}"
+                @click="focusedCloudProvider='nebius'" role="tab"
+                :aria-selected="focusedCloudProvider==='nebius'">
+          <span class="provider-tile-mark">NB</span>
+          <span><strong>Nebius</strong><small>AI Studio</small></span>
+          <span class="provider-tile-state" :class="cloudKeys.nebius_api_key_set ? 'ready' : ''"
+                x-text="cloudKeys.nebius_api_key_set ? 'Ready' : 'Add key'"></span>
+        </button>
+        <button class="provider-tile" :class="{active: focusedCloudProvider==='huggingface'}"
+                @click="focusedCloudProvider='huggingface'" role="tab"
+                :aria-selected="focusedCloudProvider==='huggingface'">
+          <span class="provider-tile-mark">HF</span>
+          <span><strong>Hugging Face</strong><small>Inference</small></span>
+          <span class="provider-tile-state" :class="settings.hf_token_set ? 'ready' : ''"
+                x-text="settings.hf_token_set ? 'Ready' : 'Add token'"></span>
+        </button>
+      </div>
+
+      <div class="provider-focus" x-show="focusedCloudProvider==='cloudflare'" x-cloak role="tabpanel">
+
       <h3 style="margin-bottom:4px;">Cloudflare Workers AI</h3>
       <p class="muted">
         Status:
@@ -1257,6 +1302,9 @@
                 x-text="cloudKeys.showCfToken ? '🙈 Hide' : '👁 Show'"></button>
       </div>
 
+      </div>
+      <div class="provider-focus" x-show="focusedCloudProvider==='together'" x-cloak role="tabpanel">
+
       <h3 style="margin:16px 0 4px;">Together AI</h3>
       <p class="muted">
         Status:
@@ -1282,6 +1330,9 @@
         <button class="ghost small" @click="cloudKeys.showTogether = !cloudKeys.showTogether"
                 x-text="cloudKeys.showTogether ? '🙈 Hide' : '👁 Show'"></button>
       </div>
+
+      </div>
+      <div class="provider-focus" x-show="focusedCloudProvider==='gemini'" x-cloak role="tabpanel">
 
       <h3 style="margin:16px 0 4px;">Google AI Studio (Gemini)</h3>
       <p class="muted">
@@ -1309,6 +1360,9 @@
                 x-text="cloudKeys.showGemini ? '🙈 Hide' : '👁 Show'"></button>
       </div>
 
+      </div>
+      <div class="provider-focus" x-show="focusedCloudProvider==='nebius'" x-cloak role="tabpanel">
+
       <h3 style="margin:16px 0 4px;">Nebius AI Studio</h3>
       <p class="muted">
         Status:
@@ -1335,6 +1389,9 @@
                 x-text="cloudKeys.showNebius ? '🙈 Hide' : '👁 Show'"></button>
       </div>
 
+      </div>
+      <div class="provider-focus" x-show="focusedCloudProvider==='huggingface'" x-cloak role="tabpanel">
+
       <h3 style="margin:16px 0 4px;">Hugging Face</h3>
       <p class="muted">
         The <strong>Hugging Face (cloud)</strong> model reuses the
@@ -1352,6 +1409,7 @@
           <li>Free users get a small monthly inference credit — best for light use.</li>
         </ol>
       </details>
+      </div>
 
       <div class="form-row" style="margin-top:14px;">
         <button class="primary" @click="saveCloudKeys()" :disabled="cloudKeys.busy">

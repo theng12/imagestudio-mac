@@ -150,6 +150,7 @@ function studio() {
       showCfToken: false, showTogether: false, showGemini: false, showNebius: false,
       busy: false, message: "", messageKind: "info",
     },
+    focusedCloudProvider: "cloudflare",
 
     // ──────── network/connectivity (where the API can be reached) ────────
     conn: {
