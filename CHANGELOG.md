@@ -10,6 +10,31 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.18.7] — 2026-07-10
+
+### Added — FLUX.1 Krea dev + Kontext dev as MLX 4-bit (16 GB-runnable)
+
+Two new catalog entries in **existing wired families** (`flux1-krea` → `_generate_flux1` with `ModelConfig.krea_dev()`; `flux1-kontext` → `_generate_kontext`, both `model_path=repo`). No engine code, no new deps, no new env — pure catalog additions that bring models previously **24 GB-only** down to **16 GB Macs**:
+
+- **`filipstrand/FLUX.1-Krea-dev-mflux-4bit`** — photorealism finetune, by the **mflux author**. `flux1-krea`, `mlx-4bit`, ungated, `min 16 GB`.
+- **`akx/FLUX.1-Kontext-dev-mflux-4bit`** — instruction image-editing (Image Edit tab). `flux1-kontext`, `mlx-4bit`, ungated, `min 16 GB`.
+
+**Why these two specifically — and how they were vetted.** The catalog notes at the FLUX.1 schnell/dev entries record that the old `madroid/*-mflux-4bit` repos were **removed in v1.2.5** because their pre-0.17 MLX quant format fails on the **T5 text-encoder load** (`dequantize … uint32`). So I verified the actual quant format, not just the file layout: I range-fetched the safetensors headers and confirmed both new repos store the **T5 (`text_encoder_2`) in the current U32 quant format** (mflux 0.10.0 / 0.9.6) — matching the working FLUX.2-klein 4-bit reference (0.15.5). `filipstrand` is the mflux author's own repo — exactly the "maintained 4-bit repo" the removed-madroid notes said to add here.
+
+### Verification honesty
+- **Statically verified:** U32-quantized T5 (the exact failure point of the removed repos), mflux-author / maintained provenance, ungated, and that both families are already `wired` with workers that load `model_path=repo`.
+- **Not completed:** a live download+generate — HF throttled the 9.6 GB weight shards to a stall even authenticated. If a load ever fails on some Mac, the app's existing handler surfaces a clear, actionable message (and suggests the full checkpoint / a klein 4-bit) — a bad entry can't break anything else.
+
+### Deliberately NOT added (documented so the audit trail is clear)
+- **`dhairyashil/FLUX.1-schnell` / `-dev` 4-bit** — mflux **0.6.2**, the same old vintage as the removed `madroid` repos → high T5-load risk; left out.
+- **DiffusionKit SD 3.5 large 4-bit** (`argmaxinc/…`) — DiffusionKit pins `mlx==0.17.3`, which would **downgrade and break mflux** (needs 0.31.2). Can't share the env; would require an isolated venv + subprocess engine (deferred).
+- **`avlp12/CyberRealistic-Z-Image-Turbo` 4-bit** — a realism/NSFW-leaning finetune; not appropriate for a general fleet catalog.
+
+### Note
+- PATCH — catalog entries in existing families, **no new deps**. Just **Update**; download the model from the Models tab to use it.
+
+---
+
 ## [1.18.6] — 2026-07-10
 
 ### Fixed — download ETA settle-guard, honest catalog sizes, and pruned dominated models

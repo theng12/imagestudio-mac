@@ -607,6 +607,30 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("avoid", "Quick iteration — 20-30 steps; use FLUX.1 schnell or a klein quant for speed"),
         ),
     ),
+    # Pre-quantized MLX 4-bit Krea, by filipstrand (the mflux author) — the
+    # "maintained 4-bit repo" the removed-madroid notes above were waiting for.
+    # Same flux1-krea family → _generate_flux1 with ModelConfig.krea_dev(). Its
+    # T5 encoder is stored in the current U32 quant format (mflux 0.10.0), so it
+    # loads on current mflux (unlike the old madroid repos). Ungated repo.
+    ModelEntry(
+        repo="filipstrand/FLUX.1-Krea-dev-mflux-4bit",
+        label="FLUX.1 Krea dev — MLX 4-bit",
+        family="flux1-krea",
+        size_gb=9.6,
+        gated=False,
+        quantization="mlx-4bit",
+        min_unified_memory_gb=16,
+        recommended_hardware="M-series with 16 GB unified memory. Pre-quantized MLX 4-bit — no HF license gate on this repo.",
+        capabilities=("txt2img", "img2img"),
+        best_for="FLUX.1 Krea dev (BFL × Krea's photorealism finetune) pre-quantized to MLX 4-bit by the mflux author — brings the natural, less 'AI-looking' Krea photorealism to 16 GB Macs, where the full 24 GB checkpoint won't fit. The repo is ungated (no token/license acceptance to download). Underlying FLUX.1-dev license is still non-commercial.",
+        use_cases=(
+            ("good",  "Photoreal FLUX (natural skin/lighting) on a 16 GB Mac — no 24 GB checkpoint"),
+            ("good",  "Ungated download — no HF license-acceptance step (unlike the full Krea dev)"),
+            ("good",  "Pre-quantized MLX 4-bit — loads fast, no on-the-fly quantization wait"),
+            ("weak",  "Underlying FLUX.1-dev license is non-commercial — personal projects only"),
+            ("avoid", "8 GB Macs — 9.6 GB download + ~16 GB floor; use a klein 4-bit for tight memory"),
+        ),
+    ),
 
     # ──────────── FLUX.1 Kontext (dedicated instruction-edit model) ────────────
     # Wired via _generate_kontext (mflux's Flux1Kontext). Requires an input
@@ -626,6 +650,29 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("good",  "'Add sunglasses', 'change shirt color', 'remove background object' style prompts"),
             ("weak",  "License is non-commercial — personal projects only"),
             ("avoid", "Pure txt2img generation — Kontext is edit-specialized and requires a reference image (use the Image Edit tab)"),
+        ),
+    ),
+    # Pre-quantized MLX 4-bit Kontext (akx) — same flux1-kontext family →
+    # _generate_kontext (mflux's Flux1Kontext, model_path=repo). T5 encoder is in
+    # the current U32 quant format (mflux 0.9.6), so it loads on current mflux.
+    # Ungated repo. Requires an input image (Image Edit tab) like the full model.
+    ModelEntry(
+        repo="akx/FLUX.1-Kontext-dev-mflux-4bit",
+        label="FLUX.1 Kontext dev — MLX 4-bit",
+        family="flux1-kontext",
+        size_gb=9.6,
+        gated=False,
+        quantization="mlx-4bit",
+        min_unified_memory_gb=16,
+        recommended_hardware="M-series with 16 GB unified memory. Pre-quantized MLX 4-bit — no HF license gate on this repo.",
+        capabilities=("edit",),
+        best_for="FLUX.1 Kontext dev (instruction image-editing) pre-quantized to MLX 4-bit — brings surgical, subject-preserving photo edits to 16 GB Macs, where the full 24 GB checkpoint won't fit. Ungated repo. Use the Image Edit tab with a reference image attached. Underlying FLUX.1-dev license is non-commercial.",
+        use_cases=(
+            ("good",  "Surgical instruction edits on a 16 GB Mac — 4-bit, no 24 GB checkpoint"),
+            ("good",  "'Add sunglasses' / 'change the shirt colour' / 'remove that object' style edits"),
+            ("good",  "Ungated download + pre-quantized (no on-the-fly quantization wait)"),
+            ("weak",  "Underlying FLUX.1-dev license is non-commercial — personal projects only"),
+            ("avoid", "Pure txt2img — Kontext is edit-specialized; needs a reference image (Image Edit tab)"),
         ),
     ),
 
