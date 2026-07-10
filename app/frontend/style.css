@@ -2124,3 +2124,15 @@ input.num-input-wide { width: 130px; }
   color: var(--text, #e5e7eb);
   border-color: color-mix(in srgb, var(--muted, #888) 60%, var(--border, #2a2a32));
 }
+
+/* Version badge — top-right in the topbar, consistent across all sibling Studio apps. */
+.version-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, .05);
+  white-space: nowrap;
+}
