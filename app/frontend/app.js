@@ -1911,9 +1911,21 @@ function studio() {
       if (sec == null || isNaN(sec)) return "—";
       sec = Math.round(sec);
       if (sec < 60) return `${sec}s`;
-      const m = Math.floor(sec / 60);
-      const s = sec % 60;
-      return `${m}m ${s.toString().padStart(2, "0")}s`;
+      if (sec < 3600) {
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return `${m}m ${s.toString().padStart(2, "0")}s`;
+      }
+      // Download ETAs on a slow/throttled connection can legitimately reach
+      // hour/day scale — "734m 12s" is as unreadable as the settle-guard bug.
+      if (sec < 86400) {
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        return `${h}h ${m.toString().padStart(2, "0")}m`;
+      }
+      const d = Math.floor(sec / 86400);
+      const h = Math.floor((sec % 86400) / 3600);
+      return `${d}d ${h.toString().padStart(2, "0")}h`;
     },
 
     downloadFilename(job) {

@@ -10,6 +10,20 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.18.6] — 2026-07-10
+
+### Fixed — download ETA settle-guard, honest catalog sizes, and pruned dominated models
+
+**Absurd download ETA (`downloads.py`).** Same fix shipped across the KH studio suite: the speed EMA's first near-zero sample (taken before real bytes land) produced ETAs like "99679m 03s" seconds after clicking Download. `eta_seconds` is now suppressed until the job has ≥3 s of runtime.
+
+**Unreadable long durations (`app.js`).** `formatDuration()` gained hour/day rollup so long ETAs read as `Xh YYm` / `Xd YYh` instead of `734m 12s`.
+
+**Catalog sizes now reflect the true download size.** These repos download unfiltered (whole repo), so the old `size_gb` values were 2–3× too low. Corrected 21 entries to the real Hugging Face repo sizes — FLUX.2-dev 64→178 GB, FLUX.1-dev/schnell/Krea/Kontext 24→58 GB each, Qwen-Image / Qwen-Image-Edit 20→58, SD3.5-large 20→72, AuraFlow 13→66, SeedVR2 18→60, plus the AITRADER FLUX.2-klein MLX quants (4-bit 2.3→4.6, 8-bit 4.5→8.6, and the 9B variants). Verified against the HF API `blobs=true` listing.
+
+**Removed 4 dominated / oversized entries.** `black-forest-labs/FLUX.2-klein-4B` and `-9B` (raw repos already dominated by their AITRADER MLX quants in the same family — the quants win on Apple Silicon); `Tongyi-MAI/Z-Image-Turbo` (raw, dominated by the andrevp Z-Image-Turbo MLX quants); `briaai/Fibo-Edit-RMBG` (~90 GB for the same edit capability as the 40 GB Fibo-Edit).
+
+**Checked, left unchanged:** memory floors — for diffusion, peak runtime memory is driven by activations/offloading, not download size, so they can't be re-derived from HF metadata and were left as-is. Download *filtering* (to shrink these large downloads) was deferred: it needs per-model load-testing, and a wrong filter would let a model download but fail to load. `py_compile` clean; catalog re-imports to 37 models.
+
 ## [1.18.5] — 2026-07-10
 
 ### Changed — Cloud credentials now use a compact provider picker
