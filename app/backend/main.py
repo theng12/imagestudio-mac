@@ -46,6 +46,7 @@ from . import cache, catalog, generation_installer, loras, settings as app_setti
 from .downloads import manager
 from .generation import manager as gen_manager, diagnostics as gen_diagnostics
 from .imports import import_path, scan_for_candidates
+from .fleet_auth import load_token as load_fleet_token, make_middleware as fleet_middleware, manifest
 
 
 # ───────────── App release version ─────────────
@@ -97,6 +98,8 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(NoCacheStaticMiddleware)
+FLEET_TOKEN = load_fleet_token()
+app.middleware("http")(fleet_middleware(FLEET_TOKEN))
 
 
 # ───────────── request models ─────────────
@@ -161,6 +164,13 @@ def health() -> dict:
         "hf_home": str(cache.hf_home()),
         "hub_dir": str(cache.hub_dir()),
     }
+
+
+@app.get("/api/capabilities")
+def capabilities() -> dict:
+    return manifest(modality="image", title=app.title, version=APP_VERSION,
+                    operations=["txt2img", "img2img", "edit"],
+                    diagnostics="/api/generate/diagnostics")
 
 
 # ── Update / generation health (auto-check surfaced by the web-UI banner) ──

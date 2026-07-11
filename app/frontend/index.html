@@ -16,6 +16,7 @@
        defer, Alpine otherwise starts immediately when its own tag executes,
        which is before app.js loads. prompts.js sets window.SAMPLE_PROMPTS
        and must load before app.js references it. -->
+  <script src="/assets/auth.js?v=fleet-1"></script>
   <script defer src="/assets/prompts.js?v=queue-1"></script>
   <script defer src="/assets/app.js?v=family-library-1"></script>
   <script defer src="/assets/alpine.min.js?v=queue-1"></script>
