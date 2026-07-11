@@ -10,6 +10,24 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.19.0] — 2026-07-10
+
+### Added — Image-generator overhaul: live feedback, per-image actions, disk management
+
+Carries the Voice Studio generator improvements to Image Studio, adapted for images (frontend live on reload; new endpoints activate after one **Update** — no new Python deps):
+
+- **Live feedback** — fixed the "Generating… undefined/undefined" progress label (now real % + elapsed); the queue panel is sticky with a live progress bar on the running job.
+- **Per-image actions** — each result tile now has hover **📂 Reveal** and two-click **🗑 Delete** (removes the image and its PNG) alongside Reuse. *(Backend: `DELETE /api/generate/history/{id}`.)*
+- **Disk management** — footer showing image count + disk used, with one-click prune ("keep newest 50" / "delete > 30 days"). High-value: outputs accumulate fast. *(Backend: `GET /api/output/stats`, `POST /api/output/prune`.)*
+- **Friendlier empty state**.
+
+### Fixed — Two native `confirm()` dialogs replaced with a webview-safe modal
+Remove-token and Import-move used `window.confirm()`, which Pinokio's embedded webview silently blocks. Both now use an in-app confirm modal.
+
+### Notes
+- MINOR bump (1.18.8 → 1.19.0). Frontend live on reload; endpoints need one **Update** (restart) — UI degrades gracefully until then. No auto-play (images don't play).
+
+---
 ## [1.18.8] — 2026-07-10
 
 ### Added — "Open outputs folder" button (+ Clear-history fix)

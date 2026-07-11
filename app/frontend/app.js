@@ -23,6 +23,7 @@ function studio() {
     candidates: [],
     loras: [],
     pendingDownload: null,
+    confirmDialog: null,           // in-app confirm modal (webview-safe replacement for confirm())
     downloadToken: "",
     importForm: { source_path: "", repo: "" },
     importMessage: "",
@@ -73,6 +74,8 @@ function studio() {
       //   next job; backend _GEN_LOCK serializes execution).
       submitting: false,
       clearArmed: false,           // two-click confirm for Clear (webview-safe)
+      deleteArmed: null,           // job.id currently armed for a two-click single delete
+      pruneArmed: null,            // prune mode currently armed for a two-click confirm
       jobs: [],          // mirror of /api/generate/jobs (latest first)
       currentJob: null,
     },
@@ -199,6 +202,7 @@ function studio() {
       await this.refreshSettings();
       this.startJobStream();
       this.startGenStream();
+      this.refreshOutputStats();
       // The catalog needs to reflect cache state changes during downloads,
       // so we re-poll it on a slower cadence than the per-job stream.
       this._refreshHandle = setInterval(() => this.refreshCatalog(), 4000);
@@ -759,6 +763,9 @@ function studio() {
     },
     get hasPending() {
       return this.pendingJobs.length > 0;
+    },
+    get outputSizeLabel() {
+      return humanBytes(this.outputStats.bytes || 0);
     },
     async cancelPending(job) {
       if (!job || !job.id) return;
@@ -1374,7 +1381,7 @@ function studio() {
     },
 
     async clearToken() {
-      if (!confirm("Remove the saved Hugging Face token? Downloads will fall back to anonymous mode (lower rate limits, no gated repos).")) return;
+      if (!await this.askConfirm("Remove saved token?", "Downloads will fall back to anonymous mode — lower rate limits and no gated repos.", "Remove token")) return;
       this.settings.busy = true;
       this.settings.message = "";
       try {
@@ -1424,8 +1431,10 @@ function studio() {
       this.importResult = null;
       if (mode === "move") {
         const sp = this.importForm.source_path || "(empty)";
-        if (!confirm(
-          `Move into HF cache?\n\n${sp}\n\nThis physically relocates the folder — the source path will be gone afterwards. Continue?`
+        if (!await this.askConfirm(
+          "Move into HF cache?",
+          `${sp}\n\nThis physically relocates the folder — the source path will be gone afterwards.`,
+          "Move"
         )) {
           return;
         }
@@ -1585,7 +1594,15 @@ function studio() {
           const running = this.gen.jobs.find(j => j.state === "running" || j.state === "queued");
           this.gen.busy = !!running;
           if (running) {
-            this.gen.busyLabel = `Generating… ${running.current_step}/${running.total_steps}`;
+            // Use the real fields the job actually has: `progress` (0..1) and
+            // `started_at`. The old label read current_step/total_steps, which
+            // aren't updated during a run → "Generating… undefined/undefined".
+            const pct = Math.round((running.progress || 0) * 100);
+            const elapsed = running.started_at
+              ? Math.max(0, Math.floor(Date.now() / 1000) - Math.floor(running.started_at)) : 0;
+            this.gen.busyLabel = "Generating…"
+              + (pct > 0 ? ` ${pct}%` : "")
+              + (elapsed ? ` · ${elapsed}s` : "");
           }
         } catch { /* swallow */ }
       });
@@ -1603,6 +1620,7 @@ function studio() {
         });
         this._tryNativeNotification("ImageStudio · done", job.params?.prompt?.slice(0, 80) || "");
         this._flashTabTitle("✓ Done");
+        this.refreshOutputStats();               // a new image landed — refresh the disk figure
       } else if (job.state === "error") {
         this.pushToast({
           kind: "error",
@@ -1856,6 +1874,90 @@ function studio() {
       } else {
         this.pushToast({ kind: "info", icon: "📂", title: "No generations yet",
           body: "Generate something first — then this opens the folder with all your images." });
+      }
+    },
+
+    /** Delete one finished generation (removes it from history AND deletes the
+     *  image). Two-click confirm — first click arms this tile, second deletes. */
+    deleteGeneration(job) {
+      if (this.gen.deleteArmed !== job.id) {
+        this.gen.deleteArmed = job.id;
+        clearTimeout(this._deleteArmTimer);
+        this._deleteArmTimer = setTimeout(() => { this.gen.deleteArmed = null; }, 3000);
+        return;
+      }
+      clearTimeout(this._deleteArmTimer);
+      this.gen.deleteArmed = null;
+      this._doDeleteGeneration(job);
+    },
+    async _doDeleteGeneration(job) {
+      try {
+        const r = await fetch("/api/generate/history/" + encodeURIComponent(job.id), { method: "DELETE" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        this.gen.jobs = (this.gen.jobs || []).filter(j => j.id !== job.id);
+        if (this.gen.currentJob && this.gen.currentJob.id === job.id) {
+          this.gen.currentJob = this.newestJob || (this.gen.jobs || [])[0] || null;
+        }
+        this.refreshOutputStats();
+        this.pushToast({ kind: "info", icon: "🗑", title: "Generation deleted" });
+      } catch (e) {
+        this.pushToast({ kind: "error", icon: "✗", title: "Couldn't delete",
+          body: "This needs the latest backend — run Update once from the Pinokio sidebar." });
+      }
+    },
+
+    // ──────── outputs folder disk usage ────────
+    outputStats: { bytes: 0, count: 0, loaded: false },
+    async refreshOutputStats() {
+      try {
+        const r = await fetch("/api/output/stats");
+        if (!r.ok) return;                         // endpoint not live until next Update
+        const d = await r.json();
+        this.outputStats = { bytes: d.bytes || 0, count: d.count || 0, loaded: true };
+      } catch { /* keep last */ }
+    },
+    /** mode: "keep50" keeps the newest 50; "old30" deletes files older than 30 days. */
+    async pruneOutputs(mode) {
+      const body = mode === "old30" ? { older_than_days: 30 } : { keep_last: 50 };
+      const label = mode === "old30" ? "older than 30 days" : "all but the newest 50";
+      if (this.gen.pruneArmed !== mode) {
+        this.gen.pruneArmed = mode;
+        clearTimeout(this._pruneArmTimer);
+        this._pruneArmTimer = setTimeout(() => { this.gen.pruneArmed = null; }, 3000);
+        return;
+      }
+      clearTimeout(this._pruneArmTimer);
+      this.gen.pruneArmed = null;
+      try {
+        const r = await fetch("/api/output/prune", {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const d = await r.json();
+        await this.refreshOutputStats();
+        this.pushToast({ kind: "info", icon: "🧹", title: "Outputs pruned",
+          body: `Deleted ${d.deleted} image${d.deleted === 1 ? "" : "s"} (${humanBytes(d.freed_bytes || 0)}) — kept ${label === "older than 30 days" ? "recent" : "the newest 50"}.` });
+      } catch (e) {
+        this.pushToast({ kind: "error", icon: "✗", title: "Couldn't prune",
+          body: "This needs the latest backend — run Update once from the Pinokio sidebar." });
+      }
+    },
+
+    // ──────── in-app confirm (webview-safe) ────────
+    // Native window.confirm() is silently blocked by Pinokio's embedded webview
+    // (returns false), so destructive actions using it appeared to do nothing.
+    // askConfirm() opens an in-app modal and resolves true/false when the user
+    // chooses. Usage: `if (!await this.askConfirm("Title", "body")) return;`
+    askConfirm(title, body, confirmLabel = "Confirm") {
+      return new Promise((resolve) => {
+        this.confirmDialog = { title, body, confirmLabel, resolve };
+      });
+    },
+    _resolveConfirm(value) {
+      if (this.confirmDialog) {
+        const r = this.confirmDialog.resolve;
+        this.confirmDialog = null;
+        r(value);
       }
     },
 

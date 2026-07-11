@@ -488,8 +488,12 @@
                   <div class="queue-row-tags muted small">
                     <span x-text="historyModelLabel(job)"></span>
                     <span x-show="historyParamsLabel(job)" x-text="' · ' + historyParamsLabel(job)"></span>
-                    <span x-show="job.state === 'running'" class="queue-running-label"> · running…</span>
                     <span x-show="job.state === 'queued'" class="queue-queued-label"> · waiting</span>
+                  </div>
+                  <!-- Live progress for the running job (bar + % + elapsed). -->
+                  <div class="queue-progress" x-show="job.state === 'running'">
+                    <div class="queue-progress-bar"><i :style="`width:${Math.max(3, Math.round((job.progress||0)*100))}%`"></i></div>
+                    <span class="queue-progress-label" x-text="gen.busyLabel || 'Generating…'"></span>
                   </div>
                 </div>
                 <button class="btn ghost small" @click="cancelPending(job)"
@@ -608,6 +612,26 @@
               </button>
             </div>
           </div>
+
+          <!-- Disk usage + prune (needs the latest backend; hidden until it responds) -->
+          <div class="output-disk" x-show="outputStats.loaded && outputStats.count > 0" x-cloak>
+            <span class="muted small">
+              💾 <span x-text="outputStats.count"></span> image<span x-show="outputStats.count !== 1">s</span>
+              · <span x-text="outputSizeLabel"></span> on disk
+            </span>
+            <span class="output-disk-actions" x-show="outputStats.count > 50">
+              <button class="link small" :style="gen.pruneArmed === 'keep50' ? 'color:#f3b562;font-weight:600' : ''" @click="pruneOutputs('keep50')"
+                      title="Delete all but the newest 50 generated images">
+                <span x-show="gen.pruneArmed !== 'keep50'">🧹 Keep newest 50</span>
+                <span x-show="gen.pruneArmed === 'keep50'" x-cloak>Click again</span>
+              </button>
+              <button class="link small" :style="gen.pruneArmed === 'old30' ? 'color:#f3b562;font-weight:600' : ''" @click="pruneOutputs('old30')"
+                      title="Delete generated images older than 30 days">
+                <span x-show="gen.pruneArmed !== 'old30'">Delete &gt; 30 days old</span>
+                <span x-show="gen.pruneArmed === 'old30'" x-cloak>Click again</span>
+              </button>
+            </span>
+          </div>
           <div class="recent-grid">
             <template x-for="j in pagedHistoryJobs" :key="j.id">
               <div class="recent-tile"
@@ -631,10 +655,17 @@
                     <span x-show="j.duration_seconds != null" x-text="' · ⏱ ' + formatDuration(j.duration_seconds)"></span>
                   </div>
                 </div>
-                <button class="tile-reuse"
-                        x-show="j.state==='done' && j.params"
-                        @click.stop="reuseParams(j)"
-                        title="Reuse these settings">🔄</button>
+                <div class="tile-actions" @click.stop>
+                  <button class="tile-act" x-show="j.output_path" @click.stop="revealInFolder(j.output_path)"
+                          title="Show this image in Finder">📂</button>
+                  <button class="tile-act" x-show="j.state==='done' && j.params" @click.stop="reuseParams(j)"
+                          title="Reuse these settings">🔄</button>
+                  <button class="tile-act" :class="{ 'tile-act-armed': gen.deleteArmed === j.id }" @click.stop="deleteGeneration(j)"
+                          :title="gen.deleteArmed === j.id ? 'Click again to delete this generation and its file' : 'Delete this generation and its file'">
+                    <span x-show="gen.deleteArmed !== j.id">🗑</span>
+                    <span x-show="gen.deleteArmed === j.id" x-cloak>✓</span>
+                  </button>
+                </div>
               </div>
             </template>
           </div>
@@ -652,6 +683,11 @@
                     @click="historyNextPage()">Next ›</button>
           </div>
         </div>
+
+        <!-- Empty state — no generations yet (and a model is ready) -->
+        <section class="gen-empty" x-show="historyJobs.length === 0 && !gen.busy && gen.available && cachedModels.length > 0" x-cloak>
+          <p class="muted">No images yet — write a prompt above and hit <strong>Generate</strong>. Your results collect here with a preview, download, reveal, reuse, and delete.</p>
+        </section>
       </div>
     </div>
   </main>
@@ -1602,6 +1638,22 @@
         </div>
       </div>
     </template>
+  </div>
+
+  <!-- ─────────── IN-APP CONFIRM MODAL (webview-safe replacement for confirm()) ─────────── -->
+  <div class="modal-backdrop" x-show="confirmDialog" x-cloak @click.self="_resolveConfirm(false)">
+    <div class="modal" x-show="confirmDialog">
+      <template x-if="confirmDialog">
+        <div>
+          <h2 x-text="confirmDialog.title"></h2>
+          <p class="muted" style="white-space:pre-line" x-text="confirmDialog.body"></p>
+          <div class="modal-actions">
+            <button class="ghost" @click="_resolveConfirm(false)">Cancel</button>
+            <button class="primary" @click="_resolveConfirm(true)" x-text="confirmDialog.confirmLabel"></button>
+          </div>
+        </div>
+      </template>
+    </div>
   </div>
 
   <!-- ─────────── DOWNLOAD CONFIRM MODAL ─────────── -->
