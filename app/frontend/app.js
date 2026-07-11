@@ -72,6 +72,7 @@ function studio() {
       //   timer so the user can submit again immediately (which queues the
       //   next job; backend _GEN_LOCK serializes execution).
       submitting: false,
+      clearArmed: false,           // two-click confirm for Clear (webview-safe)
       jobs: [],          // mirror of /api/generate/jobs (latest first)
       currentJob: null,
     },
@@ -1823,16 +1824,38 @@ function studio() {
     },
 
     async clearHistory() {
-      if (!confirm("Remove all past generations from this list? The PNG files in app/output stay on disk; only the history index is cleared.")) return;
+      // Two-click confirm instead of native confirm() — Pinokio's embedded webview
+      // can silently block window.confirm() (it returns false), making this button
+      // appear to do nothing. First click arms; a second click within 3s clears.
+      if (!this.gen.clearArmed) {
+        this.gen.clearArmed = true;
+        clearTimeout(this._clearArmTimer);
+        this._clearArmTimer = setTimeout(() => { this.gen.clearArmed = false; }, 3000);
+        return;
+      }
+      clearTimeout(this._clearArmTimer);
+      this.gen.clearArmed = false;
       try {
-        await fetch("/api/generate/jobs", { method: "DELETE" });
-        // The SSE stream will pick up the empty list on its next tick.
+        const r = await fetch("/api/generate/jobs", { method: "DELETE" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
         this.gen.currentJob = null;
-        this.gen.jobs = [];
+        this.gen.jobs = (this.gen.jobs || []).filter(j => ["queued", "running", "cancelling"].includes(j.state));
         this._jobStatePrev = {};
-        this.pushToast({ kind: "info", icon: "🧹", title: "History cleared" });
+        this.pushToast({ kind: "info", icon: "🧹", title: "History cleared", body: "The images stay in your outputs folder." });
       } catch (e) {
         this.pushToast({ kind: "error", icon: "✗", title: "Couldn't clear history", body: String(e) });
+      }
+    },
+
+    /** Open the outputs folder (where every generated file lands) in Finder.
+     *  Derived from any output's absolute path — needs no extra endpoint. */
+    openOutputsFolder() {
+      const withPath = (this.gen.jobs || []).find(j => j.output_path);
+      if (withPath && withPath.output_path) {
+        this.revealInFolder(withPath.output_path.replace(/[/\\][^/\\]+$/, ""));
+      } else {
+        this.pushToast({ kind: "info", icon: "📂", title: "No generations yet",
+          body: "Generate something first — then this opens the folder with all your images." });
       }
     },
 

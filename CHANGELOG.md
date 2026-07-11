@@ -10,6 +10,17 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.18.8] — 2026-07-10
+
+### Added — "Open outputs folder" button (+ Clear-history fix)
+
+- **Open outputs folder** — new button in the history header that reveals the folder holding every generated images file in Finder, via the existing `/api/reveal`.
+- **Clear history** used the native `window.confirm()` dialog, which Pinokio's embedded webview can silently block — so it did nothing. Replaced with a webview-safe two-click confirm (arm, then click again).
+
+### Notes
+- PATCH bump (1.18.7 → 1.18.8) — frontend only. Live on reload; no restart needed.
+
+---
 ## [1.18.7] — 2026-07-10
 
 ### Added — FLUX.1 Krea dev + Kontext dev as MLX 4-bit (16 GB-runnable)

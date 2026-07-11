@@ -602,7 +602,10 @@
             </h3>
             <div class="recent-head-actions">
               <button class="link small" x-show="!isViewingNewest" @click="backToLatest()" title="Jump back to the most recent result">← Latest</button>
-              <button class="link small" @click="clearHistory()" title="Delete all past jobs from this list">Clear</button>
+              <button class="link small" @click="openOutputsFolder()" title="Open the folder with every generated file in Finder">📂 Outputs folder</button>
+              <button class="link small" :style="gen.clearArmed ? 'color:#f3b562;font-weight:600' : ''" @click="clearHistory()" title="Delete all past jobs from this list">
+                <span x-show="!gen.clearArmed">Clear</span><span x-show="gen.clearArmed" x-cloak>Click again</span>
+              </button>
             </div>
           </div>
           <div class="recent-grid">
