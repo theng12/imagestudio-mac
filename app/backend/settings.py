@@ -52,12 +52,21 @@ _cache: dict[str, Any] = {}
 _loaded = False
 
 
+def _secure_permissions(path: Path) -> None:
+    """Keep provider credentials readable only by the current user."""
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
 def _load_if_needed() -> None:
     global _cache, _loaded
     if _loaded:
         return
     try:
         if _PATH.exists():
+            _secure_permissions(_PATH)
             data = json.loads(_PATH.read_text())
             if isinstance(data, dict):
                 _cache = {**DEFAULTS, **data}
@@ -82,7 +91,9 @@ def set_value(key: str, value: Any) -> None:
         _cache[key] = value
         tmp = _PATH.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(_cache, indent=2))
+        _secure_permissions(tmp)
         os.replace(tmp, _PATH)
+        _secure_permissions(_PATH)
 
 
 def get_hf_token() -> Optional[str]:

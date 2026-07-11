@@ -10,6 +10,26 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.19.1] — 2026-07-12
+
+### Security — protected credentials, safe update banner, patched web dependencies
+
+- Settings files containing Hugging Face and cloud-provider credentials are now
+  forced to owner-only (`0600`) permissions when read and after every atomic save.
+- The update banner now renders remote version metadata with `textContent`; a crafted
+  remote `VERSION` value can no longer inject HTML into the Studio page.
+- Raised FastAPI to `>=0.139` and `python-multipart` to `>=0.0.32`, bringing fresh
+  installs onto patched Starlette and multipart releases identified by `pip-audit`.
+
+### Verification
+
+- JavaScript and Python syntax checks pass; settings permission behavior was tested
+  against a temporary file, and the new dependency lock was audited in an isolated
+  environment. The generation truth audit still reports no catalog/dispatch drift.
+- The existing `0.0.0.0` LAN/service bind and permissive CORS were reviewed and left
+  unchanged because they are part of the documented server-mode contract. LAN API
+  authentication is tracked as a fleet feature rather than silently breaking remote use.
+
 ## [1.19.0] — 2026-07-10
 
 ### Added — Image-generator overhaul: live feedback, per-image actions, disk management
