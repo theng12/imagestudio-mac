@@ -10,6 +10,14 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.20.1] — 2026-07-13
+
+### Fixed — saved fleet credentials apply without restarting Image Studio
+
+- Protected requests now verify against the current owner-only fleet-token file instead of a startup snapshot. Studio Hub credential saves and rotations take effect immediately, and successful browser sessions refresh their authentication cookie.
+
+Verified with a live-rotation middleware regression test plus the full test suite. No launcher, engine, or dependency changes; **Just run Update**.
+
 ## [1.20.0] — 2026-07-12
 
 ### Added — secure fleet access and capability contract
