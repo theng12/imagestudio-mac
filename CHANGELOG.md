@@ -10,6 +10,26 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.21.0] — 2026-07-15
+
+### Added — safe optional automatic updates
+
+- Added Off, Notify only, and Automatic modes in Settings, with daily or weekly
+  maintenance schedules, visible status, manual checks, retry, and an
+  “Update after current work” option.
+- Updates now defer while image generations, model downloads, or generation
+  engine installation are active. The updater verifies the fixed GitHub remote,
+  clean `main` branch, fast-forward history, disk space, dependencies, imports,
+  health, and the exact running version.
+- Added a short-lived launchd scheduler, lock protection, retry/backoff,
+  rotating redacted logs, desktop notifications, restart recovery, and bounded
+  rollback when post-update verification fails. The feature is Off by default.
+
+### Verification
+
+- Added focused updater tests and verified schedule installation/removal,
+  readiness reporting, API behavior, launchers, dependencies, and responsive UI.
+
 ## [1.20.2] — 2026-07-15
 
 ### Fixed — bounded generation inputs and accurate edit controls

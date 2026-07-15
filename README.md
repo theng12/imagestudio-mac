@@ -72,6 +72,21 @@ or a parent containing a `hub/` directory with that layout. Restart the
 server. The **Import** tab → **Scan candidates** section will list every
 HF-cache-style folder it finds, with a one-click **Link** button per row.
 
+## Optional automatic updates
+
+Settings now includes a safe automatic updater. It defaults to **Off** and can
+instead notify you or install verified updates on a daily or weekly schedule.
+Image Studio always waits for image generations, model downloads, and generation
+engine installation to finish. “Update after current work” keeps retrying until
+the app is idle. Every attempt verifies the expected GitHub repository, clean
+fast-forward history, free disk space, dependencies, imports, health, and the
+running version; a failed post-update verification triggers a bounded rollback.
+
+Updater status is available through `GET /api/auto-update/status` and readiness
+through `GET /api/auto-update/readiness`. Settings, manual checks, updates, and
+retry use the corresponding POST endpoints under `/api/auto-update/`. Logs are
+stored under `logs/auto_update/`; turning the feature Off unloads its schedule.
+
 ## Versioning
 
 Image Studio KH uses [Semantic Versioning](https://semver.org/) with this project-specific interpretation:
