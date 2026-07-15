@@ -25,7 +25,9 @@ Serves:
 from __future__ import annotations
 
 import asyncio
+import io
 import json
+import math
 import os
 import socket
 import subprocess
@@ -151,6 +153,102 @@ class Txt2ImgBody(BaseModel):
     quantize: Optional[int] = None         # 3 | 4 | 6 | 8 — runtime quantize for full checkpoints
     lora_names: list[str] = []             # filename stems under app/lora/
     lora_scales: list[float] = []
+
+
+# Keep resource limits explicit at the API boundary. The frontend already uses
+# smaller model-aware presets, but remote callers must not be able to submit
+# unbounded dimensions, steps, prompts, or LoRA lists to a GPU-backed service.
+MAX_PROMPT_CHARS = 10_000
+MIN_IMAGE_SIDE = 512
+MAX_IMAGE_SIDE = 2_048
+MAX_OUTPUT_PIXELS = 4_000_000
+MIN_STEPS = 2
+MAX_STEPS = 100
+MAX_GUIDANCE = 30.0
+MAX_LORA_COUNT = 8
+MAX_LORA_SCALE = 2.0
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_INPUT_PIXELS = 16_000_000
+
+
+def _validate_generation_controls(
+    *, prompt: str, width: int, height: int, steps: int, guidance: float,
+    seed: Optional[int], quantize: Optional[int],
+    lora_names: list[str], lora_scales: list[float],
+) -> None:
+    if not prompt.strip():
+        raise HTTPException(status_code=400, detail="prompt is required")
+    if len(prompt) > MAX_PROMPT_CHARS:
+        raise HTTPException(status_code=422, detail=f"prompt must be {MAX_PROMPT_CHARS:,} characters or fewer")
+    if not (MIN_IMAGE_SIDE <= width <= MAX_IMAGE_SIDE and MIN_IMAGE_SIDE <= height <= MAX_IMAGE_SIDE):
+        raise HTTPException(
+            status_code=422,
+            detail=f"width and height must each be between {MIN_IMAGE_SIDE} and {MAX_IMAGE_SIDE}px",
+        )
+    if width % 8 or height % 8:
+        raise HTTPException(status_code=422, detail="width and height must be divisible by 8")
+    if width * height > MAX_OUTPUT_PIXELS:
+        raise HTTPException(status_code=422, detail=f"output is limited to {MAX_OUTPUT_PIXELS:,} pixels")
+    if not (MIN_STEPS <= steps <= MAX_STEPS):
+        raise HTTPException(status_code=422, detail=f"steps must be between {MIN_STEPS} and {MAX_STEPS}")
+    if not math.isfinite(guidance) or not (0.0 <= guidance <= MAX_GUIDANCE):
+        raise HTTPException(status_code=422, detail=f"guidance must be between 0 and {MAX_GUIDANCE:g}")
+    if seed is not None and not (-1 <= seed <= 2**32 - 1):
+        raise HTTPException(status_code=422, detail="seed must be -1 or an unsigned 32-bit integer")
+    if quantize is not None and quantize not in (3, 4, 6, 8):
+        raise HTTPException(status_code=422, detail="quantize must be one of 3, 4, 6, or 8")
+    if len(lora_names) > MAX_LORA_COUNT:
+        raise HTTPException(status_code=422, detail=f"at most {MAX_LORA_COUNT} LoRAs may be applied")
+    if lora_scales and len(lora_scales) != len(lora_names):
+        raise HTTPException(status_code=422, detail="lora_scales must contain one value per LoRA")
+    if any(not math.isfinite(scale) or abs(scale) > MAX_LORA_SCALE for scale in lora_scales):
+        raise HTTPException(status_code=422, detail=f"LoRA scales must be finite and between {-MAX_LORA_SCALE:g} and {MAX_LORA_SCALE:g}")
+
+
+def _parse_lora_fields(names: str, scales: str) -> tuple[list[str], list[float]]:
+    name_list = [n.strip() for n in names.split(",") if n.strip()] if names else []
+    try:
+        scale_list = [float(s) for s in scales.split(",") if s.strip()] if scales else []
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="lora_scales must be comma-separated numbers") from exc
+    return name_list, scale_list
+
+
+def _validate_image_strength(value: float) -> float:
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise HTTPException(status_code=422, detail="image_strength must be between 0 and 1")
+    return value
+
+
+async def _save_uploaded_image(image: UploadFile) -> Path:
+    """Validate and persist one bounded, decodable input image."""
+    if not image or not image.filename:
+        raise HTTPException(status_code=400, detail="image file is required")
+    data = await image.read(MAX_UPLOAD_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=400, detail="image file is empty")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"image uploads are limited to {MAX_UPLOAD_BYTES // 1024 // 1024} MiB")
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(data)) as checked:
+            checked.verify()
+        with Image.open(io.BytesIO(data)) as checked:
+            width, height = checked.size
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="image must be a valid PNG, JPEG, or WebP file") from exc
+    if width * height > MAX_INPUT_PIXELS:
+        raise HTTPException(status_code=413, detail=f"input images are limited to {MAX_INPUT_PIXELS:,} pixels")
+
+    uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    import uuid
+    suffix = Path(image.filename).suffix.lower() or ".png"
+    if suffix not in (".png", ".jpg", ".jpeg", ".webp"):
+        suffix = ".png"
+    saved_image = uploads_dir / (uuid.uuid4().hex[:12] + suffix)
+    saved_image.write_bytes(data)
+    return saved_image
 
 
 # ───────────── API: meta ─────────────
@@ -610,8 +708,12 @@ def install_generation_dependencies(request: Request) -> dict:
 
 @app.post("/api/generate/txt2img")
 def start_txt2img(body: Txt2ImgBody) -> dict:
-    if not body.prompt.strip():
-        raise HTTPException(status_code=400, detail="prompt is required")
+    _validate_generation_controls(
+        prompt=body.prompt, width=body.width, height=body.height,
+        steps=body.steps, guidance=body.guidance, seed=body.seed,
+        quantize=body.quantize, lora_names=body.lora_names,
+        lora_scales=body.lora_scales,
+    )
     model = catalog.get_model(body.repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {body.repo}")
@@ -671,10 +773,13 @@ async def start_img2img(
             status_code=503,
             detail="Generation engine not installed. Run the 'Install Generation' menu item.",
         )
-    if not prompt.strip():
-        raise HTTPException(status_code=400, detail="prompt is required")
-    if not image or not image.filename:
-        raise HTTPException(status_code=400, detail="image file is required")
+    name_list, scale_list = _parse_lora_fields(lora_names, lora_scales)
+    _validate_generation_controls(
+        prompt=prompt, width=width, height=height, steps=steps,
+        guidance=guidance, seed=seed, quantize=quantize,
+        lora_names=name_list, lora_scales=scale_list,
+    )
+    _validate_image_strength(image_strength)
     model = catalog.get_model(repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {repo}")
@@ -684,31 +789,15 @@ async def start_img2img(
         raise HTTPException(status_code=409,
             detail=f"Model {repo} is not fully cached. Download it from the Models tab first.")
 
-    # Save uploaded image to a per-job uploads dir. mflux loads from a Path.
-    uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    import uuid
-    suffix = Path(image.filename).suffix.lower() or ".png"
-    if suffix not in (".png", ".jpg", ".jpeg", ".webp"):
-        suffix = ".png"
-    saved_image = uploads_dir / (uuid.uuid4().hex[:12] + suffix)
-    data = await image.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="image file is empty")
-    saved_image.write_bytes(data)
-
-    # Parse LoRA names/scales (form fields are flat strings)
-    name_list = [n.strip() for n in lora_names.split(",") if n.strip()] if lora_names else []
-    try:
-        scale_list = [float(s) for s in lora_scales.split(",") if s.strip()] if lora_scales else []
-    except ValueError:
-        raise HTTPException(status_code=400, detail="lora_scales must be comma-separated floats")
+    # Resolve LoRAs before writing the upload, so rejected requests leave no
+    # orphaned temporary file behind.
     lora_paths: list[str] = []
     for n in name_list:
         path = loras.resolve_lora_path(n)
         if path is None:
             raise HTTPException(status_code=400, detail=f"LoRA not found: {n}")
         lora_paths.append(str(path))
+    saved_image = await _save_uploaded_image(image)
 
     params = {
         "repo": repo,
@@ -753,10 +842,13 @@ async def start_edit(
     if not gen_manager.is_available():
         raise HTTPException(status_code=503,
             detail="Generation engine not installed. Run 'Install Generation' first.")
-    if not prompt.strip():
-        raise HTTPException(status_code=400, detail="prompt (the edit instruction) is required")
-    if not image or not image.filename:
-        raise HTTPException(status_code=400, detail="image file is required")
+    name_list, scale_list = _parse_lora_fields(lora_names, lora_scales)
+    _validate_generation_controls(
+        prompt=prompt, width=width, height=height, steps=steps,
+        guidance=guidance, seed=seed, quantize=quantize,
+        lora_names=name_list, lora_scales=scale_list,
+    )
+    _validate_image_strength(image_strength)
     model = catalog.get_model(repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {repo}")
@@ -769,29 +861,15 @@ async def start_edit(
         raise HTTPException(status_code=409,
             detail=f"Model {repo} is not fully cached. Download it from the Models tab first.")
 
-    uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-    import uuid
-    suffix = Path(image.filename).suffix.lower() or ".png"
-    if suffix not in (".png", ".jpg", ".jpeg", ".webp"):
-        suffix = ".png"
-    saved_image = uploads_dir / (uuid.uuid4().hex[:12] + suffix)
-    data = await image.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="image file is empty")
-    saved_image.write_bytes(data)
-
-    name_list = [n.strip() for n in lora_names.split(",") if n.strip()] if lora_names else []
-    try:
-        scale_list = [float(s) for s in lora_scales.split(",") if s.strip()] if lora_scales else []
-    except ValueError:
-        raise HTTPException(status_code=400, detail="lora_scales must be comma-separated floats")
+    # Resolve LoRAs before writing the upload, so rejected requests leave no
+    # orphaned temporary file behind.
     lora_paths: list[str] = []
     for n in name_list:
         path = loras.resolve_lora_path(n)
         if path is None:
             raise HTTPException(status_code=400, detail=f"LoRA not found: {n}")
         lora_paths.append(str(path))
+    saved_image = await _save_uploaded_image(image)
 
     params = {
         "repo": repo,

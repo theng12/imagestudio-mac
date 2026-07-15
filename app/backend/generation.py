@@ -718,9 +718,6 @@ class GenerationManager:
             "guidance": float(params.get("guidance", 4.0)),
             "image_path": params["image_path"],
         }
-        if params.get("image_strength") is not None:
-            gen_kwargs["image_strength"] = float(params["image_strength"])
-
         result = flux.generate_image(**gen_kwargs)
         if not hasattr(result, "save"):
             raise RuntimeError(
@@ -1266,9 +1263,6 @@ class GenerationManager:
             gen_kwargs["negative_prompt"] = negative_prompt
         if params.get("image_path"):
             gen_kwargs["image_path"] = params["image_path"]
-        if params.get("image_strength") is not None:
-            gen_kwargs["image_strength"] = float(params["image_strength"])
-
         result = flux.generate_image(**gen_kwargs)
         result.save(str(output_path), overwrite=True)
 
@@ -1408,8 +1402,6 @@ class GenerationManager:
             "guidance": float(params.get("guidance", 4.0)),
             "image_path": params["image_path"],
         }
-        if params.get("image_strength") is not None:
-            gen_kwargs["image_strength"] = float(params["image_strength"])
 
         result = flux.generate_image(**gen_kwargs)
         result.save(str(output_path), overwrite=True)

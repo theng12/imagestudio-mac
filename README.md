@@ -4,8 +4,9 @@ A custom Pinokio app for FLUX image generation on Apple Silicon. Mac-only
 (`darwin` + `arm64`), built around [mflux](https://github.com/filipstrand/mflux)
 and MLX.
 
-> **Phase 1 status:** model catalog, download manager, and weight-import flows
-> are live. Generation (txt2img / img2img / image edit) lands in Phase 2.
+> **Current status:** model catalog, download manager, weight-import flows, and
+> local/cloud generation (txt2img / img2img / image edit) are live. Generation
+> dependencies remain optional so model browsing and downloads stay lightweight.
 
 ## What it does today
 
@@ -33,6 +34,10 @@ and MLX.
   recommendations so you don't accidentally fetch 60 GB.
 - Resumable downloads — interrupt and re-trigger; partial files continue
   from the last byte offset.
+- Generation requests are bounded at the API boundary: prompts up to 10,000
+  characters, outputs up to 2,048px per side / 4 MP, inputs up to 20 MiB / 16 MP,
+  and 2–100 steps. Invalid images and numeric values are rejected before they
+  reach the inference engine.
 - Import weights you already have elsewhere into HF cache via symlink
   (no copy, no duplication).
 - HTTP API on `127.0.0.1:<port>` — call it from your main Mac over the LAN

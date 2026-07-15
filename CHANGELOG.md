@@ -10,6 +10,31 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.20.2] — 2026-07-15
+
+### Fixed — bounded generation inputs and accurate edit controls
+
+- Added backend validation for prompt length, dimensions, pixel count, steps,
+  guidance, seeds, quantization, LoRA count/scales, and uploaded image size and
+  decodability. This closes the unbounded-input path that could turn a malformed
+  or remote request into excessive memory use or an opaque engine failure.
+- Rejected the unsupported 1-step mflux request before it reaches the scheduler,
+  avoiding the observed `ZeroDivisionError` and returning an actionable 422.
+- Fixed FIBO Edit to stop passing `image_strength` to an mflux signature that
+  does not accept it. Qwen Edit and FIBO Edit now hide that ignored control.
+
+### Verification
+
+- Verified all 27 Hugging Face-backed catalog repositories currently resolve;
+  cloud entries are synthetic provider IDs by design.
+- Ran a real seeded FLUX.2 klein 4-bit 512×512 generation on the cached model;
+  output was a valid nonblank RGB PNG at the managed output path.
+- Added regression tests for input limits and model-aware edit controls. The
+  existing launcher, service mode, catalog families, and dispatch audit remain
+  unchanged.
+
+---
+
 ## [1.20.1] — 2026-07-13
 
 ### Fixed — saved fleet credentials apply without restarting Image Studio

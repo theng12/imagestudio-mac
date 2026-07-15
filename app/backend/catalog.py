@@ -1349,7 +1349,13 @@ def generation_profile(m: ModelEntry) -> dict:
             "guidance": not is_upscaler and not distilled,
             "seed": not is_upscaler,
             "batch": True,
-            "image_strength": not is_upscaler and any(c in m.capabilities for c in ("img2img", "edit")),
+            # Qwen-Edit and FIBO-Edit accept a reference image but their
+            # installed mflux edit signatures do not accept image_strength.
+            "image_strength": (
+                not is_upscaler
+                and any(c in m.capabilities for c in ("img2img", "edit"))
+                and not (m.family == "qwen-edit" or (m.family == "fibo" and "edit" in m.capabilities))
+            ),
             "runtime_quantization": m.engine == "mflux" and not m.is_apple_optimized and not is_upscaler,
             "loras": m.family in {"flux2-klein", "flux1-schnell", "flux1-dev", "flux1-krea"},
         }
