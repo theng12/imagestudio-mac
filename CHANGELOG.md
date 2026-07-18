@@ -10,6 +10,27 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.21.1] — 2026-07-18
+
+### Fixed — automatic-update settings stay put while editing
+
+- Separated the editable update form from the five-second live status poll.
+  Choosing Automatic, changing Daily/Weekly, or selecting a maintenance time
+  no longer snaps back to the previously saved value before it can be saved.
+- Reworked the update panel into clear mode cards, styled schedule controls,
+  one primary save action, and contextual update actions. Unsaved changes are
+  now explicit, and unavailable update actions no longer clutter the panel.
+
+### Verification
+
+- Reproduced the original poll overwrite in-browser, then verified mode and
+  maintenance-time drafts survive multiple status polls and remain saveable.
+- The full Python test suite and JavaScript syntax check pass. The scheduler,
+  update engine, launcher, dependency manifests, and active service were left
+  unchanged because the failure was isolated to frontend draft state.
+
+---
+
 ## [1.21.0] — 2026-07-15
 
 ### Added — safe optional automatic updates
