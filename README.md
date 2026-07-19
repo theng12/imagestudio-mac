@@ -49,6 +49,11 @@ and MLX.
 - **Open UI / Models / Downloads** — deep-link tabs once the server is running.
 - **HF Cache** — Pinokio file browser at `cache/HF_HOME/hub`.
 - **Outputs** — generated images (Phase 2).
+- **Install/Reinstall Generation** — remains available while the regular server
+  is running and in startup-service mode. The installer safely refreshes the
+  appropriate server when it finishes.
+- **What's New · Updates & Details** — always opens the installed release
+  changelog, including while another launcher action is in progress.
 - **Update / Reinstall / Reset** — standard launcher lifecycle.
 
 ## Importing your existing FLUX.1 schnell / dev

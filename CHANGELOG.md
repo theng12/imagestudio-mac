@@ -10,6 +10,27 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.21.2] — 2026-07-19
+
+### Improved — persistent generation install and release details
+
+- Install/Reinstall Generation now remains available while the regular server
+  is running, including the brief period before its Web UI URL is ready.
+- Startup-service mode keeps the same generation action, so heavy generation
+  dependencies can be refreshed without first uninstalling or manually stopping
+  the service. The existing installer still restarts the appropriate server
+  after verification.
+- Added an always-visible **What's New · Updates & Details** launcher item that
+  opens the installed `CHANGELOG.md` in Pinokio's rendered Markdown view.
+
+### Verification
+
+- Exercised mocked uninstalled, stopped, starting, running, service, install,
+  generation-install, update, update-and-restart, and reset menu states.
+- Confirmed the generation action appears in all server-running modes and the
+  What's New item appears in every state. Launcher syntax and the full test
+  suite pass; application and dependency code were left unchanged.
+
 ## [1.21.1] — 2026-07-18
 
 ### Fixed — automatic-update settings stay put while editing
