@@ -44,9 +44,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from . import cache, catalog, generation_installer, loras, settings as app_settings
+from . import cache, catalog, generation_installer, loras, settings as app_settings, storage_policy
 from .downloads import manager
 from .generation import manager as gen_manager, diagnostics as gen_diagnostics
+from .generation import OUTPUT_DIR
 from .imports import import_path, scan_for_candidates
 from .fleet_auth import load_token as load_fleet_token, make_middleware as fleet_middleware, manifest
 from .auto_update import UpdateError
@@ -104,6 +105,7 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
 app.add_middleware(NoCacheStaticMiddleware)
 FLEET_TOKEN = load_fleet_token()
 app.middleware("http")(fleet_middleware(FLEET_TOKEN))
+storage_policy.start_background(gen_manager, OUTPUT_DIR)
 
 
 # ───────────── request models ─────────────
@@ -1020,6 +1022,27 @@ def prune_outputs(body: PruneBody) -> dict:
     """Reclaim disk: keep the newest N (keep_last) OR delete files older than
     older_than_days. History entries for deleted files are trimmed too."""
     return gen_manager.prune_outputs(keep_last=body.keep_last, older_than_days=body.older_than_days)
+
+
+@app.get("/api/storage-policy")
+def get_storage_policy() -> dict:
+    return storage_policy.status(gen_manager, OUTPUT_DIR)
+
+
+@app.put("/api/storage-policy")
+def put_storage_policy(body: dict) -> dict:
+    storage_policy.save(
+        body.get("enabled"), body.get("retention_days"), body.get("max_gb"))
+    return storage_policy.status(gen_manager, OUTPUT_DIR)
+
+
+@app.post("/api/storage-policy/cleanup")
+def cleanup_storage_policy(body: dict | None = None) -> dict:
+    body = body or {}
+    target = body.get("target_bytes")
+    if target is not None and (not isinstance(target, int) or target < 0):
+        raise HTTPException(400, "target_bytes must be a non-negative integer")
+    return storage_policy.enforce(gen_manager, OUTPUT_DIR, target)
 
 
 @app.get("/api/generate/stream")

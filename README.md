@@ -92,6 +92,21 @@ through `GET /api/auto-update/readiness`. Settings, manual checks, updates, and
 retry use the corresponding POST endpoints under `/api/auto-update/`. Logs are
 stored under `logs/auto_update/`; turning the feature Off unloads its schedule.
 
+## Local output retention
+
+Generated images are temporary local backups. Automatic cleanup is enabled by
+default, keeps completed images for three days, and enforces an 80 GB hard cap
+by deleting the oldest completed outputs first. Active jobs and everything
+outside `app/output`—including models, LoRAs, uploads, imports, credentials, and
+settings—are never touched. The Generate page provides matching Save policy and
+Clean now controls.
+
+```text
+GET  /api/storage-policy
+PUT  /api/storage-policy          # { enabled, retention_days, max_gb }
+POST /api/storage-policy/cleanup  # optional { target_bytes }
+```
+
 ## Versioning
 
 Image Studio KH uses [Semantic Versioning](https://semver.org/) with this project-specific interpretation:

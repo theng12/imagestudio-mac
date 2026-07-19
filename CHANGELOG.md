@@ -10,6 +10,28 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.21.3] — 2026-07-19
+
+### Added — automatic local output protection
+
+- Added an enabled-by-default three-day retention policy and an 80 GB hard
+  limit for generated image backups. A background sweep runs hourly and removes
+  the oldest completed outputs first when either limit is reached.
+- Added a modern in-app policy card with retention and capacity controls,
+  current usage, Save policy, and Clean now actions. Studio Hub can use the same
+  authenticated API to apply and inspect the policy remotely.
+- Cleanup is deliberately restricted to `app/output`. Active jobs, model and
+  LoRA caches, imports, uploads, credentials, and application settings are
+  outside the cleanup scope.
+
+### Verification
+
+- Added regression coverage for age expiry, hard-cap eviction, API persistence,
+  and active-job protection. Python compilation and JavaScript syntax checks
+  pass. Launcher scripts and generation dependencies were left unchanged.
+
+---
+
 ## [1.21.2] — 2026-07-19
 
 ### Improved — persistent generation install and release details

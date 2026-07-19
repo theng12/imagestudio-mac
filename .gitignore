@@ -8,6 +8,7 @@ app/uploads/
 app/__pycache__/
 app/backend/__pycache__/
 app/backend/settings.json
+app/backend/storage_policy.json
 *.pyc
 .DS_Store
 
