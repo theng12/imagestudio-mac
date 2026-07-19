@@ -45,7 +45,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from . import cache, catalog, generation_installer, loras, settings as app_settings, storage_policy
+from . import cache, catalog, generation_installer, loras, memory_policy, settings as app_settings, storage_policy
 from .downloads import manager
 from .generation import manager as gen_manager, diagnostics as gen_diagnostics
 from .generation import OUTPUT_DIR
@@ -53,6 +53,10 @@ from .imports import import_path, scan_for_candidates
 from .fleet_auth import load_token as load_fleet_token, make_middleware as fleet_middleware, manifest
 from .auto_update import UpdateError
 from .auto_update_config import create_updater
+from .process_title import PROCESS_TITLE, apply_process_title
+
+
+PROCESS_TITLE_APPLIED = apply_process_title()
 
 
 # ───────────── App release version ─────────────
@@ -107,6 +111,7 @@ app.add_middleware(NoCacheStaticMiddleware)
 FLEET_TOKEN = load_fleet_token()
 app.middleware("http")(fleet_middleware(FLEET_TOKEN))
 storage_policy.start_background(gen_manager, OUTPUT_DIR)
+memory_policy.start_background(gen_manager)
 
 
 # ───────────── request models ─────────────
@@ -151,6 +156,10 @@ class AutoUpdateSettingsBody(BaseModel):
 
 class AutoUpdateRequestBody(BaseModel):
     after_current: bool = False
+
+
+class MemoryPolicyBody(BaseModel):
+    mode: str
 
 
 class TokenTestBody(BaseModel):
@@ -712,6 +721,26 @@ def test_hf_token_endpoint(body: TokenTestBody) -> dict:
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Token validation failed: {e}")
+
+
+@app.get("/api/memory-policy")
+def get_memory_policy() -> dict:
+    data = memory_policy.status()
+    data.update(process_title=PROCESS_TITLE, process_title_applied=PROCESS_TITLE_APPLIED)
+    return data
+
+
+@app.put("/api/memory-policy")
+def put_memory_policy(body: MemoryPolicyBody) -> dict:
+    memory_policy.save(body.mode)
+    return get_memory_policy()
+
+
+@app.post("/api/memory/release")
+def release_memory() -> dict:
+    data = memory_policy.release_now()
+    data.update(process_title=PROCESS_TITLE, process_title_applied=PROCESS_TITLE_APPLIED)
+    return data
 
 
 # ───────────── API: reveal in OS file manager ─────────────

@@ -109,6 +109,30 @@ PUT  /api/storage-policy          # { enabled, retention_days, max_gb }
 POST /api/storage-policy/cleanup  # optional { target_bytes }
 ```
 
+## Model memory management
+
+Image Studio keeps loaded models warm by default so repeat generations start
+faster. Settings offers three opt-in alternatives: **Balanced** releases model
+memory after 10 idle minutes, **Memory Saver** after 2 idle minutes, and
+**Immediate** after every completed job. **Release Memory / Unload Model** runs
+the same cleanup manually. No release starts while generation is queued or
+running.
+
+The cleanup removes cached model objects, runs Python garbage collection, and
+clears available MLX/Metal and PyTorch MPS allocator caches. It does not delete
+downloaded models or generated images. Studio Hub can inspect and apply the
+same policy using the authenticated fleet API:
+
+```text
+GET  /api/memory-policy
+PUT  /api/memory-policy   # { "mode": "performance|balanced|memory_saver|immediate" }
+POST /api/memory/release
+```
+
+After Update and the next normal restart, the backend asks macOS to display it
+as **Image Studio Mac** in Activity Monitor. This changes only the process label;
+the service still uses Python internally to run the MLX generation libraries.
+
 ## Versioning
 
 Image Studio KH uses [Semantic Versioning](https://semver.org/) with this project-specific interpretation:

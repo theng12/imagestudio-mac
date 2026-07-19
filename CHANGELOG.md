@@ -10,6 +10,30 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.22.0] — 2026-07-20
+
+### Added — opt-in model memory management
+
+- Added a Settings control for four accelerator-memory policies: Performance
+  keeps models warm by default, Balanced unloads after 10 idle minutes, Memory
+  Saver unloads after 2 idle minutes, and Immediate unloads after each job.
+- Added a guarded **Release Memory / Unload Model** action. Manual and automatic
+  release both defer while generation is queued or running, then clear cached
+  model objects and the available MLX, Metal, and PyTorch MPS allocator caches.
+- The Python service now requests the friendly Activity Monitor process title
+  **Image Studio Mac**. The title helper is best-effort so a missing title
+  dependency can never prevent the app from starting.
+- Added the authenticated memory-policy API used by Settings and Studio Hub:
+  `GET/PUT /api/memory-policy` and `POST /api/memory/release`.
+
+### Verification
+
+- Added focused policy, idle-timer, active-job guard, API, frontend-contract,
+  and process-title checks. All 39 tests pass; backend compilation, frontend
+  and launcher syntax, generation truth audit, and whitespace checks pass.
+- The running service was deliberately not interrupted. Run **Update**, then
+  restart Image Studio normally when convenient to load this release.
+
 ## [1.21.4] — 2026-07-19
 
 ### Fixed — release notes are available inside the WebUI

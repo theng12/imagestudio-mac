@@ -1221,6 +1221,50 @@
       </p>
     </section>
 
+    <section class="card auto-update-card memory-policy-card" x-show="memoryPolicy.loaded" x-cloak>
+      <div class="auto-update-head">
+        <div><h2>Model memory</h2><p class="muted">Choose when Image Studio unloads local models and releases MLX, Metal, and MPS memory. Performance remains the default.</p></div>
+        <span class="auto-update-state" :class="memoryPolicy.busy ? 'running' : 'idle'" x-text="memoryPolicy.busy ? 'busy' : memoryPolicy.mode.replace('_',' ')"></span>
+      </div>
+      <fieldset class="auto-update-mode-group" @change="markMemoryPolicyDirty()">
+        <legend>Choose the speed and memory tradeoff</legend>
+        <div class="auto-update-mode-options memory-policy-options">
+          <label class="auto-update-mode-option" :class="{active:memoryPolicy.draftMode==='performance'}">
+            <input type="radio" name="memory-policy-mode" value="performance" x-model="memoryPolicy.draftMode">
+            <span><strong>Performance · default</strong><small>Keep models and accelerator caches warm for the fastest next generation.</small></span>
+          </label>
+          <label class="auto-update-mode-option" :class="{active:memoryPolicy.draftMode==='balanced'}">
+            <input type="radio" name="memory-policy-mode" value="balanced" x-model="memoryPolicy.draftMode">
+            <span><strong>Balanced</strong><small>Release model memory after 10 minutes without generation work.</small></span>
+          </label>
+          <label class="auto-update-mode-option" :class="{active:memoryPolicy.draftMode==='memory_saver'}">
+            <input type="radio" name="memory-policy-mode" value="memory_saver" x-model="memoryPolicy.draftMode">
+            <span><strong>Memory Saver</strong><small>Release model memory after 2 idle minutes.</small></span>
+          </label>
+          <label class="auto-update-mode-option" :class="{active:memoryPolicy.draftMode==='immediate'}">
+            <input type="radio" name="memory-policy-mode" value="immediate" x-model="memoryPolicy.draftMode">
+            <span><strong>Immediate</strong><small>Unload after every completed generation. Lowest idle RAM, slowest next start.</small></span>
+          </label>
+        </div>
+      </fieldset>
+      <div class="auto-update-actions">
+        <button class="primary" @click="saveMemoryPolicy()" :disabled="memoryPolicy.busy || !memoryPolicy.dirty" x-text="memoryPolicy.busy ? 'Working…' : 'Save mode'"></button>
+        <span class="auto-update-unsaved" x-show="memoryPolicy.dirty">Unsaved changes</span>
+        <span class="auto-update-action-spacer"></span>
+        <button class="ghost" @click="releaseMemoryNow()" :disabled="memoryPolicy.busy || memoryPolicy.active_jobs > 0">Release Memory / Unload Model</button>
+      </div>
+      <p class="auto-update-message" x-show="memoryPolicy.message" :class="memoryPolicy.messageKind" x-text="memoryPolicy.message"></p>
+      <div class="auto-update-status-grid">
+        <div><span>Current mode</span><strong x-text="memoryPolicy.mode.replace('_',' ')"></strong></div>
+        <div><span>Automatic release</span><strong x-text="memoryPolicy.idle_seconds===null ? 'Disabled' : (memoryPolicy.idle_seconds===0 ? 'After every job' : Math.round(memoryPolicy.idle_seconds/60)+' min idle')"></strong></div>
+        <div><span>Active jobs</span><strong x-text="memoryPolicy.active_jobs"></strong></div>
+        <div><span>Last release</span><strong x-text="memoryPolicyTime(memoryPolicy.last_release_at)"></strong></div>
+        <div><span>Next release</span><strong x-text="memoryPolicy.mode==='performance' ? 'Keeps models warm' : memoryPolicyTime(memoryPolicy.next_release_at)"></strong></div>
+        <div><span>Process title</span><strong x-text="memoryPolicy.process_title"></strong></div>
+      </div>
+      <p class="auto-update-defer error" x-show="memoryPolicy.last_error"><strong>Last release:</strong> <span x-text="memoryPolicy.last_error"></span></p>
+    </section>
+
     <section class="card auto-update-card" x-show="autoUpdate.loaded" x-cloak>
       <div class="auto-update-head"><div><h2>Automatic updates</h2><p class="muted">Optional, recoverable updates that wait for image generation, model downloads, and engine installation to finish.</p></div><span class="auto-update-state" :class="autoUpdate.state" x-text="autoUpdate.state"></span></div>
       <fieldset class="auto-update-mode-group" @change="markAutoUpdateDirty()">

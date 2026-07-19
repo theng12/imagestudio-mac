@@ -152,6 +152,14 @@ function studio() {
       draft:{mode:"off",frequency:"daily",maintenance_hour:4,idle_only:true},
       dirty:false,
     },
+    memoryPolicy: {
+      loaded:false, busy:false, mode:"performance", draftMode:"performance",
+      default_mode:"performance", idle_seconds:null, options:[], active_jobs:0,
+      last_activity_at:null, next_release_at:null, last_release_at:null,
+      last_release_reason:null, last_release_details:null, last_error:null,
+      release_count:0, process_title:"Image Studio Mac", dirty:false,
+      message:"", messageKind:"info",
+    },
 
     // ──────── cloud provider API keys (Settings tab) ────────
     // Backing state for the keyed cloud providers (Cloudflare, Together).
@@ -213,6 +221,7 @@ function studio() {
       await this.refreshGenerationInstall();
       await this.refreshLoras();
       await this.refreshSettings();
+      await this.refreshMemoryPolicy(true, true);
       await this.refreshAutoUpdate(true);
       this.startJobStream();
       this.startGenStream();
@@ -225,13 +234,14 @@ function studio() {
       this._tickHandle = setInterval(() => { this._nowSec = Math.floor(Date.now() / 1000); }, 1000);
       setInterval(() => {
         if (this.tab === "settings" || ["checking","updating","restarting","deferred"].includes(this.autoUpdate.state)) this.refreshAutoUpdate(true);
+        if (this.tab === "settings") this.refreshMemoryPolicy(true);
       }, 5000);
       // Route via hash so the sidebar buttons in pinokio.js can deep-link.
       const applyHash = () => {
         const h = (location.hash || "").replace(/^#\/?/, "");
         if (["generate", "models", "downloads", "imports", "api", "settings"].includes(h)) this.tab = h;
         if (h === "imports") this.scanImports();
-        if (h === "settings") { this.refreshSettings(); this.refreshAutoUpdate(true); }
+        if (h === "settings") { this.refreshSettings(); this.refreshMemoryPolicy(true); this.refreshAutoUpdate(true); }
       };
       window.addEventListener("hashchange", applyHash);
       applyHash();
@@ -1264,6 +1274,78 @@ function studio() {
       } catch { /* keep last */ }
       // Connectivity panel is on the same tab — refresh it at the same time.
       await this.refreshConnectivity();
+    },
+
+    async refreshMemoryPolicy(silent=false, forceDraft=false) {
+      try {
+        const r = await fetch("/api/memory-policy", {cache:"no-store"});
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        this.applyMemoryPolicy(data, forceDraft);
+      } catch (e) {
+        if (!silent) {
+          this.memoryPolicy.message = String(e.message || e);
+          this.memoryPolicy.messageKind = "error";
+        }
+      }
+    },
+    applyMemoryPolicy(data, forceDraft=false) {
+      const keepDraft = this.memoryPolicy.dirty && !forceDraft;
+      const draft = this.memoryPolicy.draftMode;
+      Object.assign(this.memoryPolicy, data, {loaded:true});
+      this.memoryPolicy.draftMode = keepDraft ? draft : data.mode;
+      if (!keepDraft) this.memoryPolicy.dirty = false;
+    },
+    markMemoryPolicyDirty() {
+      this.memoryPolicy.dirty = this.memoryPolicy.draftMode !== this.memoryPolicy.mode;
+      this.memoryPolicy.message = "";
+      this.memoryPolicy.messageKind = "info";
+    },
+    memoryPolicyTime(value) {
+      if (!value) return "Not yet";
+      const date = new Date(Number(value) * 1000);
+      return Number.isNaN(date.getTime()) ? "Not yet" : date.toLocaleString();
+    },
+    async saveMemoryPolicy() {
+      this.memoryPolicy.busy = true;
+      this.memoryPolicy.message = "Saving memory mode…";
+      this.memoryPolicy.messageKind = "info";
+      try {
+        const r = await fetch("/api/memory-policy", {
+          method:"PUT", headers:{"content-type":"application/json"},
+          body:JSON.stringify({mode:this.memoryPolicy.draftMode}),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        this.applyMemoryPolicy(data, true);
+        this.memoryPolicy.message = data.mode === "performance"
+          ? "Performance mode saved. Models stay warm for the fastest next generation."
+          : "Memory mode saved. Automatic release will wait for generation to be idle.";
+        this.memoryPolicy.messageKind = "success";
+      } catch (e) {
+        this.memoryPolicy.message = String(e.message || e);
+        this.memoryPolicy.messageKind = "error";
+      } finally {
+        this.memoryPolicy.busy = false;
+      }
+    },
+    async releaseMemoryNow() {
+      this.memoryPolicy.busy = true;
+      this.memoryPolicy.message = "Releasing model and accelerator memory…";
+      this.memoryPolicy.messageKind = "info";
+      try {
+        const r = await fetch("/api/memory/release", {method:"POST"});
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        this.applyMemoryPolicy(data);
+        this.memoryPolicy.message = "Memory released. The next local generation may take longer while its model reloads.";
+        this.memoryPolicy.messageKind = "success";
+      } catch (e) {
+        this.memoryPolicy.message = String(e.message || e);
+        this.memoryPolicy.messageKind = "error";
+      } finally {
+        this.memoryPolicy.busy = false;
+      }
     },
 
     async refreshAutoUpdate(silent=false) {

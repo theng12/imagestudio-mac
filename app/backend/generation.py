@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from . import catalog, cache, loras
+from . import catalog, cache, loras, memory_policy
 
 
 # ───────────── module-level locks / paths ─────────────
@@ -281,6 +281,46 @@ class GenerationManager:
 
     def get(self, job_id: str) -> Optional[GenerationJob]:
         return self._jobs.get(job_id)
+
+    def release_memory(self) -> dict:
+        """Unload cached pipelines and return MLX/Metal/MPS allocations to macOS."""
+        if any(str(job.state) in {"queued", "running", "cancelling"}
+               for job in self._jobs.values()):
+            raise RuntimeError("image generation is active")
+        if not _GEN_LOCK.acquire(blocking=False):
+            raise RuntimeError("the generation engine is still finishing work")
+        actions: list[str] = []
+        try:
+            previous = getattr(self, "_diffusers_pipe", None)
+            if previous is not None:
+                self._diffusers_pipe = None
+                del previous
+                actions.append("diffusers pipeline unloaded")
+            import gc
+            gc.collect()
+            actions.append("Python objects collected")
+            try:
+                import torch  # type: ignore
+                if torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+                    actions.append("PyTorch MPS cache cleared")
+            except Exception:
+                pass
+            try:
+                import mlx.core as mx  # type: ignore
+                if hasattr(mx, "synchronize"):
+                    mx.synchronize()
+                if hasattr(mx, "clear_cache"):
+                    mx.clear_cache()
+                    actions.append("MLX Metal cache cleared")
+                elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
+                    mx.metal.clear_cache()
+                    actions.append("MLX Metal cache cleared")
+            except Exception:
+                pass
+            return {"released": True, "actions": actions}
+        finally:
+            _GEN_LOCK.release()
 
     def cancel(self, job_id: str) -> bool:
         """
@@ -568,6 +608,7 @@ class GenerationManager:
                 self._persist()
                 return
 
+            memory_policy.mark_generation_started()
             try:
                 output_path = OUTPUT_DIR / f"{job.job_id}.png"
                 self._dispatch_edit(job, output_path)
@@ -589,6 +630,7 @@ class GenerationManager:
             finally:
                 job.finished_at = time.time()
                 self._persist()
+                memory_policy.mark_generation_finished()
 
     def _dispatch_edit(self, job: GenerationJob, output_path: Path) -> None:
         """
@@ -761,6 +803,7 @@ class GenerationManager:
                 self._persist()
                 return
 
+            memory_policy.mark_generation_started()
             try:
                 output_path = OUTPUT_DIR / f"{job.job_id}.png"
                 self._dispatch_txt2img(job, output_path)
@@ -782,6 +825,7 @@ class GenerationManager:
             finally:
                 job.finished_at = time.time()
                 self._persist()
+                memory_policy.mark_generation_finished()
 
     def _dispatch_txt2img(self, job: GenerationJob, output_path: Path) -> None:
         """
