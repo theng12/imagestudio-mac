@@ -54,6 +54,8 @@ and MLX.
   appropriate server when it finishes.
 - **What's New · Updates & Details** — always opens the installed release
   changelog, including while another launcher action is in progress.
+- The WebUI version area includes **What's New** and opens the same installed
+  release history in a modal without leaving Image Studio.
 - **Update / Reinstall / Reset** — standard launcher lifecycle.
 
 ## Importing your existing FLUX.1 schnell / dev
