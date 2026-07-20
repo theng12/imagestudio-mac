@@ -10,6 +10,24 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.22.1] — 2026-07-20
+
+### Added — immutable generation evidence for GenStudio
+
+- Image jobs now report the exact cached Hugging Face snapshot commit plus the
+  final PNG media type, format, byte count, and SHA-256 digest.
+- Fleet callers may request an exact model revision. ImageStudio rejects the
+  job before inference when the cached snapshot differs, preventing a moving
+  model alias from producing an unverifiable customer asset.
+- Browser callers remain backward compatible; omitting `model_revision` uses
+  the current immutable cached snapshot and reports it in the result.
+
+### Verification
+
+- Added focused snapshot and final-image evidence tests. The full ImageStudio
+  test suite, backend compilation, frontend syntax, truth audit, and whitespace
+  checks pass. No launcher or dependency files changed.
+
 ## [1.22.0] — 2026-07-20
 
 ### Added — opt-in model memory management

@@ -9,6 +9,7 @@ Pure-ish functions that look at the on-disk Hugging Face cache and answer:
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -93,6 +94,19 @@ def has_weight_files(repo: str) -> bool:
     except (FileNotFoundError, PermissionError):
         return False
     return False
+
+
+def snapshot_revision(repo: str) -> str | None:
+    """Return the immutable cached commit used for inference, never a moving alias."""
+    refs_main = repo_cache_dir(repo) / "refs" / "main"
+    try:
+        revision = refs_main.read_text().strip()
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        return None
+    snapshot = repo_cache_dir(repo) / "snapshots" / revision
+    return revision if snapshot.is_dir() else None
 
 
 def cache_state(repo: str) -> str:

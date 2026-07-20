@@ -15,6 +15,7 @@ Output images land in `app/output/<job_id>.png`.
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 import os
 import sys
 import threading
@@ -238,6 +239,27 @@ class GenerationJob:
         if self.started_at is not None:
             end = self.finished_at if self.finished_at is not None else time.time()
             duration = max(0.0, end - self.started_at)
+        evidence: dict[str, object] = {
+            "model_revision": self.params.get("model_revision"),
+            "media_type": None,
+            "format": None,
+            "bytes": None,
+            "sha256": None,
+        }
+        if self.output_path:
+            try:
+                content = Path(self.output_path).read_bytes()
+            except OSError:
+                pass
+            else:
+                evidence.update(
+                    {
+                        "media_type": "image/png",
+                        "format": "png",
+                        "bytes": len(content),
+                        "sha256": sha256(content).hexdigest(),
+                    }
+                )
         return {
             "id": self.job_id,
             "mode": self.mode,
@@ -253,6 +275,7 @@ class GenerationJob:
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "duration_seconds": duration,
+            **evidence,
         }
 
 

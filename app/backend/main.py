@@ -178,6 +178,7 @@ class Txt2ImgBody(BaseModel):
     quantize: Optional[int] = None         # 3 | 4 | 6 | 8 — runtime quantize for full checkpoints
     lora_names: list[str] = []             # filename stems under app/lora/
     lora_scales: list[float] = []
+    model_revision: Optional[str] = None      # immutable HF snapshot requested by fleet clients
 
 
 # Keep resource limits explicit at the API boundary. The frontend already uses
@@ -874,6 +875,13 @@ def start_txt2img(body: Txt2ImgBody) -> dict:
                 detail=f"Model {body.repo} is not fully cached. Download it from the Models tab first.",
             )
 
+    actual_revision = cache.snapshot_revision(body.repo) if not model.is_cloud else None
+    if body.model_revision is not None and body.model_revision != actual_revision:
+        raise HTTPException(
+            status_code=409,
+            detail="The cached model revision does not match the requested revision.",
+        )
+
     # Resolve LoRA names to absolute paths so the worker doesn't need to redo it.
     lora_paths: list[str] = []
     for name in body.lora_names:
@@ -883,6 +891,7 @@ def start_txt2img(body: Txt2ImgBody) -> dict:
         lora_paths.append(str(path))
 
     params = body.model_dump()
+    params["model_revision"] = actual_revision
     params["lora_paths"] = lora_paths
     job = gen_manager.start_txt2img(params)
     return {"job": job.serialize()}
