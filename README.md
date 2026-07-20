@@ -148,7 +148,7 @@ only aggregate generation availability and queue state—never prompts, job IDs,
 or asset paths. The audited GenStudio minimum/recommended tier is currently
 16 GB unified memory; 8 GB remains unqualified.
 
-See [the full worker qualification record](docs/GENSTUDIO_FLUX2_KLEIN_QUALIFICATION.md)
+See [the ImageStudio–GenStudio integration record](docs/imagestudio_genstudio_integration.md)
 for the capability matrix and cross-repository blockers. Studio Hub remains the
 only site-local scheduler; Image Studio only serializes work already assigned
 to this worker.
@@ -334,7 +334,7 @@ up to eight variations is eight independent logical jobs, never previews or
 multiple hidden files from one request.
 
 Known GenStudio qualification limits and integration blockers are maintained in
-[the FLUX.2 Klein qualification record](docs/GENSTUDIO_FLUX2_KLEIN_QUALIFICATION.md).
+[the ImageStudio–GenStudio integration record](docs/imagestudio_genstudio_integration.md).
 
 ## Run as an always-on server (auto-start + self-healing)
 

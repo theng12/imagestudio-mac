@@ -1,4 +1,9 @@
-# GenStudio FLUX.2 Klein worker qualification
+# ImageStudio–GenStudio integration
+
+This living record covers the ImageStudio–GenStudio integration. Add future
+model/runtime qualifications and cross-repository integration changes here.
+
+## FLUX.2 Klein worker qualification
 
 Audit date: 2026-07-20
 
