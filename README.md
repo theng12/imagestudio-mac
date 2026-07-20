@@ -133,6 +133,26 @@ After Update and the next normal restart, the backend asks macOS to display it
 as **Image Studio Mac** in Activity Monitor. This changes only the process label;
 the service still uses Python internally to run the MLX generation libraries.
 
+## GenStudio FLUX.2 Klein readiness
+
+The qualified worker target is
+`AITRADER/FLUX2-klein-4B-mlx-4bit` at immutable snapshot
+`7fd24828501390b67a92c8b66d2fc5a707d0ba1a`. Image Studio now executes that
+snapshot by local commit path, stages and validates one PNG before atomic
+publication, and returns model/runtime, worker/machine, dimensions, steps,
+resolved seed, media, size, checksum, and runtime evidence.
+
+The protected model inventory reports the cached revision, qualification match,
+execution readiness, and pinned upstream Apache-2.0 evidence. Health reports
+only aggregate generation availability and queue state—never prompts, job IDs,
+or asset paths. The audited GenStudio minimum/recommended tier is currently
+16 GB unified memory; 8 GB remains unqualified.
+
+See [the full worker qualification record](docs/GENSTUDIO_FLUX2_KLEIN_QUALIFICATION.md)
+for the capability matrix and cross-repository blockers. Studio Hub remains the
+only site-local scheduler; Image Studio only serializes work already assigned
+to this worker.
+
 ## Versioning
 
 Image Studio KH uses [Semantic Versioning](https://semver.org/) with this project-specific interpretation:
@@ -299,16 +319,22 @@ should read it from settings/`ENVIRONMENT` (Pollinations needs none). Cloud
 entries are intentionally excluded from `audit_truth.py`, which only audits the
 local mflux engine wiring.
 
-## Phase 2 (coming)
+## Generation API
 
-- `mflux` and MLX installed into the conda env.
-- `/api/generate/{txt2img,img2img,edit}` with streaming progress.
-- LoRA picker + chaining with weight sliders.
-- Aspect-ratio presets baked into the generate form.
+Local generation is implemented through
+`POST /api/generate/{txt2img,img2img,edit}` with polling and SSE progress.
+Text-to-image accepts JSON. Image-to-image/edit accept one bounded multipart
+`image` plus the same controls; fleet callers can include `model_revision` in
+either shape to require an exact cached commit. Poll
+`GET /api/generate/jobs/{id}` until terminal, then fetch the single validated
+PNG from `GET /api/generate/jobs/{id}/image` only when state is `done`.
 
-## Patches / known limitations
+Completed job JSON includes a `final_asset` evidence object. A WebUI batch of
+up to eight variations is eight independent logical jobs, never previews or
+multiple hidden files from one request.
 
-Nothing patched in `app/` yet — this is greenfield code, not a fork.
+Known GenStudio qualification limits and integration blockers are maintained in
+[the FLUX.2 Klein qualification record](docs/GENSTUDIO_FLUX2_KLEIN_QUALIFICATION.md).
 
 ## Run as an always-on server (auto-start + self-healing)
 

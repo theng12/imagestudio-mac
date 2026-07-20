@@ -1,11 +1,13 @@
 import asyncio
 import io
 import unittest
+from unittest.mock import patch
 
 from fastapi import HTTPException, UploadFile
 from backend import catalog
 from backend.main import (
     MAX_UPLOAD_BYTES,
+    _resolve_local_model_revision,
     _save_uploaded_image,
     _validate_generation_controls,
 )
@@ -54,6 +56,10 @@ class GenerationValidationTests(unittest.TestCase):
         fibo = catalog.get_model("briaai/Fibo-Edit")
         self.assertFalse(catalog.generation_profile(qwen)["controls"]["image_strength"])
         self.assertFalse(catalog.generation_profile(fibo)["controls"]["image_strength"])
+
+    def test_explicit_cached_revision_can_be_used_after_main_ref_moves(self):
+        with patch("backend.main.cache.snapshot_path", return_value=object()):
+            self.assertEqual(_resolve_local_model_revision("owner/model", "a" * 40), "a" * 40)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
+from importlib.metadata import PackageNotFoundError, version as package_version
 import os
+import socket
 import sys
 import threading
 import time
@@ -39,6 +41,34 @@ _GEN_LOCK = threading.Lock()
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 HISTORY_FILE = OUTPUT_DIR / ".history.json"
 HISTORY_MAX = 200   # keep last N completed jobs; oldest are trimmed off disk
+
+
+def _package_revision(name: str) -> str:
+    try:
+        return package_version(name)
+    except PackageNotFoundError:
+        return "missing"
+
+
+def runtime_revision() -> str:
+    """Exact installed worker/runtime release tuple used for new jobs."""
+    try:
+        app_version = (Path(__file__).resolve().parent.parent.parent / "VERSION").read_text().strip()
+    except OSError:
+        app_version = "unknown"
+    return (
+        f"imagestudio-mac@{app_version};"
+        f"mflux@{_package_revision('mflux')};mlx@{_package_revision('mlx')}"
+    )
+
+
+def worker_identity() -> str:
+    return os.environ.get("IMAGESTUDIO_WORKER_ID", "image").strip() or "image"
+
+
+def machine_identity() -> str:
+    configured = os.environ.get("IMAGESTUDIO_MACHINE_ID", "").strip()
+    return configured or socket.gethostname().split(".", 1)[0]
 
 
 # ───────────── soft import of mflux ─────────────
@@ -228,6 +258,10 @@ class GenerationJob:
     output_path: Optional[str] = None
     resolved_seed: Optional[int] = None  # the actual seed used (for reproducibility,
                                          # populated even when the user passed -1)
+    runtime_revision: Optional[str] = None
+    worker_id: Optional[str] = None
+    machine_id: Optional[str] = None
+    asset_evidence: dict = field(default_factory=dict)
     error: Optional[str] = None
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
@@ -240,26 +274,31 @@ class GenerationJob:
             end = self.finished_at if self.finished_at is not None else time.time()
             duration = max(0.0, end - self.started_at)
         evidence: dict[str, object] = {
+            "model_repository": self.params.get("repo"),
             "model_revision": self.params.get("model_revision"),
+            "runtime_revision": self.runtime_revision,
+            "worker_id": self.worker_id,
+            "machine_id": self.machine_id,
+            "width": None,
+            "height": None,
+            "steps": None,
+            "seed": None,
+            "image_count": None,
+            "runtime_seconds": None,
             "media_type": None,
             "format": None,
             "bytes": None,
             "sha256": None,
         }
-        if self.output_path:
-            try:
-                content = Path(self.output_path).read_bytes()
-            except OSError:
-                pass
-            else:
-                evidence.update(
-                    {
-                        "media_type": "image/png",
-                        "format": "png",
-                        "bytes": len(content),
-                        "sha256": sha256(content).hexdigest(),
-                    }
-                )
+        published = self.state == "done" and bool(self.output_path)
+        if published:
+            evidence.update(self.asset_evidence)
+            evidence.update({
+                "steps": int(self.params.get("steps", self.total_steps)),
+                "seed": self.resolved_seed,
+                "image_count": 1,
+                "runtime_seconds": duration,
+            })
         return {
             "id": self.job_id,
             "mode": self.mode,
@@ -268,13 +307,14 @@ class GenerationJob:
             "current_step": self.current_step,
             "total_steps": self.total_steps,
             "params": self.params,
-            "output_path": self.output_path,
-            "output_url": f"/api/generate/jobs/{self.job_id}/image" if self.output_path else None,
+            "output_path": self.output_path if published else None,
+            "output_url": f"/api/generate/jobs/{self.job_id}/image" if published else None,
             "resolved_seed": self.resolved_seed,
             "error": self.error,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "duration_seconds": duration,
+            "final_asset": evidence if published else None,
             **evidence,
         }
 
@@ -293,10 +333,15 @@ class GenerationManager:
         return MFLUX_AVAILABLE
 
     def availability(self) -> dict:
+        states = [str(job.state) for job in self._jobs.values()]
         return {
             "available": MFLUX_AVAILABLE,
             "error": MFLUX_IMPORT_ERROR,
             "presets": aspect_options(),
+            "busy": any(state in {"queued", "running", "cancelling"} for state in states),
+            "queued": states.count("queued"),
+            "running": states.count("running"),
+            "runtime_revision": runtime_revision(),
         }
 
     def list_jobs(self) -> list[GenerationJob]:
@@ -384,6 +429,9 @@ class GenerationManager:
             mode="txt2img",
             params=params,
             total_steps=int(params.get("steps", 4)),
+            runtime_revision=runtime_revision(),
+            worker_id=worker_identity(),
+            machine_id=machine_identity(),
         )
         self._jobs[job.job_id] = job
         job.thread = threading.Thread(
@@ -402,6 +450,9 @@ class GenerationManager:
             mode="img2img",
             params=params,
             total_steps=int(params.get("steps", 4)),
+            runtime_revision=runtime_revision(),
+            worker_id=worker_identity(),
+            machine_id=machine_identity(),
         )
         self._jobs[job.job_id] = job
         # Same worker as txt2img — the Flux2Klein.generate_image call below
@@ -427,6 +478,9 @@ class GenerationManager:
             mode="edit",
             params=params,
             total_steps=int(params.get("steps", 4)),
+            runtime_revision=runtime_revision(),
+            worker_id=worker_identity(),
+            machine_id=machine_identity(),
         )
         self._jobs[job.job_id] = job
         job.thread = threading.Thread(
@@ -564,6 +618,10 @@ class GenerationManager:
             "params": job.params,
             "output_path": job.output_path,
             "resolved_seed": job.resolved_seed,
+            "runtime_revision": job.runtime_revision,
+            "worker_id": job.worker_id,
+            "machine_id": job.machine_id,
+            "asset_evidence": job.asset_evidence,
             "error": job.error,
             "started_at": job.started_at,
             "finished_at": job.finished_at,
@@ -587,12 +645,67 @@ class GenerationManager:
                 total_steps=raw.get("total_steps", 0),
                 output_path=output_path,
                 resolved_seed=raw.get("resolved_seed"),
+                runtime_revision=raw.get("runtime_revision"),
+                worker_id=raw.get("worker_id"),
+                machine_id=raw.get("machine_id"),
+                asset_evidence=raw.get("asset_evidence") or {},
                 error=raw.get("error"),
                 started_at=raw.get("started_at"),
                 finished_at=raw.get("finished_at"),
             )
         except Exception:
             return None
+
+    @staticmethod
+    def _discard_path(path: Path) -> None:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+    def _publish_final_png(self, job: GenerationJob, staged_path: Path) -> Path:
+        """Validate one staged PNG and atomically expose it as the final asset."""
+        from PIL import Image  # type: ignore
+
+        if job.resolved_seed is None:
+            raise RuntimeError("generation completed without a resolved seed")
+        with Image.open(staged_path) as image:
+            image_format = image.format
+            image.verify()
+        with Image.open(staged_path) as image:
+            width, height = image.size
+        if image_format != "PNG" or width < 1 or height < 1:
+            raise RuntimeError("generation did not produce a valid PNG asset")
+
+        content = staged_path.read_bytes()
+        if not content.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RuntimeError("generation output has an invalid PNG signature")
+
+        final_path = OUTPUT_DIR / f"{job.job_id}.png"
+        os.replace(staged_path, final_path)
+        job.asset_evidence = {
+            "width": int(width),
+            "height": int(height),
+            "media_type": "image/png",
+            "format": "png",
+            "bytes": len(content),
+            "sha256": sha256(content).hexdigest(),
+        }
+        job.output_path = str(final_path.resolve())
+        return final_path
+
+    @staticmethod
+    def _cleanup_uploaded_inputs(job: GenerationJob) -> None:
+        """Remove request uploads after terminal completion; never touch other paths."""
+        uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
+        candidates = [job.params.get("image_path"), *(job.params.get("image_paths") or [])]
+        for raw in {str(value) for value in candidates if value}:
+            path = Path(raw)
+            try:
+                if path.resolve().parent == uploads_dir.resolve():
+                    path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     # ----- worker -----
 
@@ -616,6 +729,7 @@ class GenerationManager:
             if job.cancel_event.is_set():
                 job.state = "cancelled"
                 job.finished_at = time.time()
+                self._cleanup_uploaded_inputs(job)
                 self._persist()
                 return
 
@@ -628,21 +742,31 @@ class GenerationManager:
                 job.state = "error"
                 job.error = f"mflux not installed: {MFLUX_IMPORT_ERROR}"
                 job.finished_at = time.time()
+                self._cleanup_uploaded_inputs(job)
                 self._persist()
                 return
 
             memory_policy.mark_generation_started()
+            working_dir = OUTPUT_DIR / ".working"
+            working_dir.mkdir(parents=True, exist_ok=True)
+            staged_path = working_dir / f"{job.job_id}.png"
+            final_path = OUTPUT_DIR / f"{job.job_id}.png"
             try:
-                output_path = OUTPUT_DIR / f"{job.job_id}.png"
-                self._dispatch_edit(job, output_path)
+                self._discard_path(staged_path)
+                self._dispatch_edit(job, staged_path)
                 if job.cancel_event.is_set():
                     job.state = "cancelled"
+                    self._discard_path(staged_path)
                 else:
-                    job.output_path = str(output_path.resolve())
+                    published_path = self._publish_final_png(job, staged_path)
                     job.progress = 1.0
                     job.state = "done"
-                    print(f"[gen] edit done {job.job_id} → {output_path}", flush=True)
+                    print(f"[gen] edit done {job.job_id} → {published_path}", flush=True)
             except Exception as e:
+                self._discard_path(staged_path)
+                self._discard_path(final_path)
+                job.output_path = None
+                job.asset_evidence = {}
                 if job.cancel_event.is_set():
                     job.state = "cancelled"
                 else:
@@ -652,6 +776,7 @@ class GenerationManager:
                     traceback.print_exc()
             finally:
                 job.finished_at = time.time()
+                self._cleanup_uploaded_inputs(job)
                 self._persist()
                 memory_policy.mark_generation_finished()
 
@@ -688,6 +813,17 @@ class GenerationManager:
                 f"No edit worker implemented for model family '{family}'."
             )
 
+    @staticmethod
+    def _immutable_model_path(job: GenerationJob) -> str:
+        repo = str(job.params.get("repo") or "")
+        revision = job.params.get("model_revision")
+        snapshot = cache.snapshot_path(repo, revision)
+        if snapshot is None:
+            raise RuntimeError(
+                f"Immutable model snapshot {repo}@{revision or 'missing'} is not available"
+            )
+        return str(snapshot)
+
     def _generate_klein_edit(self, job: GenerationJob, output_path: Path) -> None:
         """Run Flux2KleinEdit. Mirrors _generate_flux2_klein but uses the Edit class."""
         from mflux.models.flux2.variants.edit.flux2_klein_edit import Flux2KleinEdit  # type: ignore
@@ -699,7 +835,7 @@ class GenerationManager:
         lora_scales = params.get("lora_scales") or None
 
         flux = Flux2KleinEdit(
-            model_path=repo,
+            model_path=self._immutable_model_path(job),
             quantize=quantize,
             lora_paths=lora_paths,
             lora_scales=lora_scales,
@@ -805,6 +941,7 @@ class GenerationManager:
             if job.cancel_event.is_set():
                 job.state = "cancelled"
                 job.finished_at = time.time()
+                self._cleanup_uploaded_inputs(job)
                 self._persist()
                 return
 
@@ -823,21 +960,31 @@ class GenerationManager:
                 job.error = f"mflux not installed: {MFLUX_IMPORT_ERROR}"
                 job.finished_at = time.time()
                 print(f"[gen] {job.job_id}: {job.error}", file=sys.stderr, flush=True)
+                self._cleanup_uploaded_inputs(job)
                 self._persist()
                 return
 
             memory_policy.mark_generation_started()
+            working_dir = OUTPUT_DIR / ".working"
+            working_dir.mkdir(parents=True, exist_ok=True)
+            staged_path = working_dir / f"{job.job_id}.png"
+            final_path = OUTPUT_DIR / f"{job.job_id}.png"
             try:
-                output_path = OUTPUT_DIR / f"{job.job_id}.png"
-                self._dispatch_txt2img(job, output_path)
+                self._discard_path(staged_path)
+                self._dispatch_txt2img(job, staged_path)
                 if job.cancel_event.is_set():
                     job.state = "cancelled"
+                    self._discard_path(staged_path)
                 else:
-                    job.output_path = str(output_path.resolve())
+                    published_path = self._publish_final_png(job, staged_path)
                     job.progress = 1.0
                     job.state = "done"
-                    print(f"[gen] done {job.job_id} → {output_path}", flush=True)
+                    print(f"[gen] done {job.job_id} → {published_path}", flush=True)
             except Exception as e:
+                self._discard_path(staged_path)
+                self._discard_path(final_path)
+                job.output_path = None
+                job.asset_evidence = {}
                 if job.cancel_event.is_set():
                     job.state = "cancelled"
                 else:
@@ -847,6 +994,7 @@ class GenerationManager:
                     traceback.print_exc()
             finally:
                 job.finished_at = time.time()
+                self._cleanup_uploaded_inputs(job)
                 self._persist()
                 memory_policy.mark_generation_finished()
 
@@ -1136,7 +1284,7 @@ class GenerationManager:
                 return super()._encode_prompt_pair(prompt=prompt, negative_prompt=neg, guidance=guidance)
 
         flux = Flux2KleinWithNegative(
-            model_path=repo,
+            model_path=self._immutable_model_path(job),
             quantize=quantize,
             lora_paths=lora_paths,
             lora_scales=lora_scales,

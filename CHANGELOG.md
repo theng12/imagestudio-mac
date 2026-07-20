@@ -10,6 +10,38 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.22.2] — 2026-07-20
+
+### Fixed — GenStudio FLUX.2 Klein worker qualification
+
+- Pinned FLUX.2 Klein execution to the accepted local snapshot directory for
+  text-to-image, image-to-image, and edit jobs. The moving repository alias is
+  no longer passed to mflux after revision validation.
+- Added immutable revision support to multipart image-to-image/edit requests and
+  reject models that do not truthfully advertise the requested operation.
+- Generation now writes to a private working path, validates the decoded PNG,
+  captures its actual dimensions and checksum, and atomically publishes exactly
+  one final asset. Invalid, partial, cancelled, or failed output is removed and
+  never receives a successful state or output URL.
+- Completed jobs now report model/runtime revision, worker/machine identity,
+  dimensions, steps, resolved seed, image count, media type, byte size, SHA-256,
+  and runtime. Request uploads are removed after terminal completion.
+- Health now exposes aggregate generation availability without request data.
+  Protected inventory reports the cached/qualified revision match, execution
+  readiness, and pinned upstream Apache-2.0 evidence.
+- Corrected the GenStudio hardware floor from an unverified 8 GB claim to a
+  verified 16 GB minimum/recommendation. An 8 GB run remains a qualification
+  blocker rather than a promise.
+
+### Verification
+
+- Added revision-path, final-asset, incomplete-output, privacy, license,
+  capability, and memory-floor regression coverage. The qualification record
+  documents worker support and the remaining Studio Hub/GenStudio relay,
+  provenance, and 8 GB qualification blockers.
+- No live generation, launcher, dependency, scheduler, account, credit, public
+  API, global-claiming, or cloud-provider changes were made.
+
 ## [1.22.1] — 2026-07-20
 
 ### Added — immutable generation evidence for GenStudio

@@ -109,6 +109,14 @@ def snapshot_revision(repo: str) -> str | None:
     return revision if snapshot.is_dir() else None
 
 
+def snapshot_path(repo: str, revision: str | None) -> Path | None:
+    """Resolve an immutable cached snapshot without following a moving ref."""
+    if not revision or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        return None
+    snapshot = repo_cache_dir(repo) / "snapshots" / revision
+    return snapshot.resolve() if snapshot.is_dir() else None
+
+
 def cache_state(repo: str) -> str:
     """
     Returns one of: 'absent', 'partial', 'cached'.

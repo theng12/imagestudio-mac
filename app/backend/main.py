@@ -248,6 +248,24 @@ def _validate_generation_controls(
         raise HTTPException(status_code=422, detail=f"LoRA scales must be finite and between {-MAX_LORA_SCALE:g} and {MAX_LORA_SCALE:g}")
 
 
+def _resolve_local_model_revision(repo: str, requested: Optional[str]) -> str:
+    """Return an immutable local snapshot, honoring an explicitly pinned commit."""
+    if requested is not None:
+        if cache.snapshot_path(repo, requested) is None:
+            raise HTTPException(
+                status_code=409,
+                detail="The requested immutable model revision is not cached locally.",
+            )
+        return requested
+    actual = cache.snapshot_revision(repo)
+    if actual is None:
+        raise HTTPException(
+            status_code=409,
+            detail="The cached model does not have a verifiable immutable revision.",
+        )
+    return actual
+
+
 def _parse_lora_fields(names: str, scales: str) -> tuple[list[str], list[float]]:
     name_list = [n.strip() for n in names.split(",") if n.strip()] if names else []
     try:
@@ -298,12 +316,22 @@ async def _save_uploaded_image(image: UploadFile) -> Path:
 
 @app.get("/api/health")
 def health() -> dict:
+    generation = gen_manager.availability()
     return {
         "ok": True,
         "version": app.version,
         "app_version": APP_VERSION,
         "hf_home": str(cache.hf_home()),
         "hub_dir": str(cache.hub_dir()),
+        # Aggregate execution readiness only: no prompts, job ids, input paths,
+        # output paths, or other request/customer data belongs in health.
+        "generation": {
+            "available": generation["available"],
+            "busy": generation["busy"],
+            "queued": generation["queued"],
+            "running": generation["running"],
+            "runtime_revision": generation["runtime_revision"],
+        },
     }
 
 
@@ -489,7 +517,18 @@ def get_catalog() -> dict:
             }
             d["active_download"] = None
         else:
-            d["cache"] = cache.status_snapshot(m.repo)
+            cache_status = cache.status_snapshot(m.repo)
+            revision = cache.snapshot_revision(m.repo)
+            revision_match = not m.qualified_revision or revision == m.qualified_revision
+            d["cache"] = cache_status
+            d["model_revision"] = revision
+            d["qualified_revision_match"] = revision_match
+            d["execution_ready"] = bool(
+                gen_manager.is_available()
+                and cache_status["state"] == "cached"
+                and m.runtime_compatible
+                and revision_match
+            )
             active = manager.active_for_repo(m.repo)
             d["active_download"] = active.serialize() if active else None
         models.append(d)
@@ -875,12 +914,10 @@ def start_txt2img(body: Txt2ImgBody) -> dict:
                 detail=f"Model {body.repo} is not fully cached. Download it from the Models tab first.",
             )
 
-    actual_revision = cache.snapshot_revision(body.repo) if not model.is_cloud else None
-    if body.model_revision is not None and body.model_revision != actual_revision:
-        raise HTTPException(
-            status_code=409,
-            detail="The cached model revision does not match the requested revision.",
-        )
+    actual_revision = (
+        _resolve_local_model_revision(body.repo, body.model_revision)
+        if not model.is_cloud else None
+    )
 
     # Resolve LoRA names to absolute paths so the worker doesn't need to redo it.
     lora_paths: list[str] = []
@@ -912,6 +949,7 @@ async def start_img2img(
     quantize: Optional[int] = Form(None),
     lora_names: str = Form(""),          # comma-separated names
     lora_scales: str = Form(""),         # comma-separated floats
+    model_revision: Optional[str] = Form(None),
 ) -> dict:
     """
     Image-to-image generation. Accepts multipart/form-data: an `image` file
@@ -935,9 +973,13 @@ async def start_img2img(
         raise HTTPException(status_code=400, detail=f"Unknown repo: {repo}")
     if not model.runtime_compatible:
         raise HTTPException(status_code=409, detail=model.runtime_note or "This model conversion is not supported by the current worker.")
+    if "img2img" not in (model.capabilities or ()):
+        raise HTTPException(status_code=400,
+            detail=f"Model {repo} does not support image-to-image mode.")
     if cache.cache_state(repo) != "cached":
         raise HTTPException(status_code=409,
             detail=f"Model {repo} is not fully cached. Download it from the Models tab first.")
+    actual_revision = _resolve_local_model_revision(repo, model_revision)
 
     # Resolve LoRAs before writing the upload, so rejected requests leave no
     # orphaned temporary file behind.
@@ -964,6 +1006,7 @@ async def start_img2img(
         "lora_names": name_list,
         "lora_scales": scale_list,
         "lora_paths": lora_paths,
+        "model_revision": actual_revision,
     }
     job = gen_manager.start_img2img(params)
     return {"job": job.serialize()}
@@ -983,6 +1026,7 @@ async def start_edit(
     quantize: Optional[int] = Form(None),
     lora_names: str = Form(""),
     lora_scales: str = Form(""),
+    model_revision: Optional[str] = Form(None),
 ) -> dict:
     """
     Instruction-based image edit. Same multipart shape as img2img but the
@@ -1010,6 +1054,7 @@ async def start_edit(
     if cache.cache_state(repo) != "cached":
         raise HTTPException(status_code=409,
             detail=f"Model {repo} is not fully cached. Download it from the Models tab first.")
+    actual_revision = _resolve_local_model_revision(repo, model_revision)
 
     # Resolve LoRAs before writing the upload, so rejected requests leave no
     # orphaned temporary file behind.
@@ -1036,6 +1081,7 @@ async def start_edit(
         "lora_names": name_list,
         "lora_scales": scale_list,
         "lora_paths": lora_paths,
+        "model_revision": actual_revision,
     }
     job = gen_manager.start_edit(params)
     return {"job": job.serialize()}
@@ -1066,6 +1112,8 @@ def get_generation_image(job_id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="job not found")
     if not job.output_path:
         raise HTTPException(status_code=425, detail="image not ready yet")
+    if job.state != "done":
+        raise HTTPException(status_code=425, detail="image did not complete successfully")
     return FileResponse(job.output_path, media_type="image/png")
 
 

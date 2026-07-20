@@ -413,6 +413,15 @@ class ModelEntry:
     # preventing a misleading "Engine ready" state and a guaranteed load crash.
     runtime_compatible: bool = True
     runtime_note: str = ""
+    # Optional internal qualification and license evidence. These fields are
+    # intentionally technical inventory metadata, not customer-facing branding.
+    qualified_revision: Optional[str] = None
+    license_spdx: Optional[str] = None
+    license_source_repo: Optional[str] = None
+    license_source_revision: Optional[str] = None
+    license_evidence_url: Optional[str] = None
+    license_evidence_sha256: Optional[str] = None
+    license_repackage_copy_present: Optional[bool] = None
 
     @property
     def is_apple_optimized(self) -> bool:
@@ -436,10 +445,22 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=4.6,
         gated=False,
         quantization="mlx-4bit",
-        min_unified_memory_gb=8,
-        recommended_hardware="M1/M2 8 GB works but is tight. M2 Pro / M3 16 GB is comfortable.",
+        min_unified_memory_gb=16,
+        recommended_hardware="16 GB unified memory is the lowest tier verified for GenStudio. 8 GB remains unqualified.",
         capabilities=("txt2img", "img2img", "edit"),
-        best_for="The recommended starter on Apple Silicon. Fastest loads, smallest disk footprint, runs on 8 GB Macs. Great for daily exploration and instruction edits.",
+        best_for="The recommended starter on Apple Silicon. Fastest loads and smallest disk footprint. Great for daily exploration and instruction edits.",
+        qualified_revision="7fd24828501390b67a92c8b66d2fc5a707d0ba1a",
+        license_spdx="Apache-2.0",
+        license_source_repo="black-forest-labs/FLUX.2-klein-4B",
+        license_source_revision="e7b7dc27f91deacad38e78976d1f2b499d76a294",
+        license_evidence_url=(
+            "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/blob/"
+            "e7b7dc27f91deacad38e78976d1f2b499d76a294/LICENSE.md"
+        ),
+        license_evidence_sha256="ca02bc51900ab07789d1b70283329e7137f5af98f5161c23a1c81fc38a4af1fe",
+        # The immutable AITRADER repackage names the upstream base model but
+        # contains no LICENSE file or license card field. Keep that fact visible.
+        license_repackage_copy_present=False,
         use_cases=(
             ("good",  "Quick concept iteration — single landscapes, abstract art, isolated objects"),
             ("good",  "Style exploration ('cinematic 35mm', 'oil painting', 'isometric voxel')"),
@@ -1472,6 +1493,18 @@ def serialize_model(m: ModelEntry) -> dict:
         "is_diffusers": m.is_diffusers,
         "runtime_compatible": m.runtime_compatible,
         "runtime_note": m.runtime_note,
+        "qualified_revision": m.qualified_revision,
+        "license_evidence": (
+            {
+                "spdx": m.license_spdx,
+                "source_repo": m.license_source_repo,
+                "source_revision": m.license_source_revision,
+                "url": m.license_evidence_url,
+                "sha256": m.license_evidence_sha256,
+                "repackage_copy_present": m.license_repackage_copy_present,
+            }
+            if m.license_spdx else None
+        ),
         "generation_profile": generation_profile(m),
     }
 
