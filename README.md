@@ -163,6 +163,11 @@ Image Studio KH uses [Semantic Versioning](https://semver.org/) with this projec
 
 Current version is stored at the project root in [`VERSION`](VERSION). The full release history with what changed in each version lives in [`CHANGELOG.md`](CHANGELOG.md).
 
+Every tracked change is release-gated: it must increase `VERSION` and add a
+matching first changelog entry with at least one visible **What's New** detail.
+Run `python3 release_metadata_check.py <base-ref>` before publishing; GitHub
+also enforces the same rule for pull requests and pushes to `main`.
+
 The WebUI footer shows the running version. The same value is also surfaced at:
 
 - `GET /api/version` → `{"app_version": "1.0.0", "title": "Image Studio KH"}`

@@ -10,6 +10,23 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.22.3] — 2026-07-20
+
+### Added — enforced versioning and What's New release details
+
+- Every tracked product, launcher, dependency, documentation, or workflow change
+  now requires a semantic `VERSION` increase and a matching first changelog
+  entry with at least one user-visible detail for **What's New**.
+- Added a repository release-metadata check and GitHub pull-request/push workflow
+  so an omitted version bump or empty/mismatched release note fails before it can
+  be treated as a complete release.
+
+### Verification
+
+- Added regression tests for missing metadata, unchanged versions, mismatched
+  changelog headings, and valid visible release details. The validator also
+  passes against the complete 1.22.3 release diff.
+
 ## [1.22.2] — 2026-07-20
 
 ### Fixed — GenStudio FLUX.2 Klein worker qualification
