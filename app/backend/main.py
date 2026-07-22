@@ -342,12 +342,11 @@ def capabilities() -> dict:
                     diagnostics="/api/generate/diagnostics")
 
 
-# ── Update / generation health (auto-check surfaced by the web-UI banner) ──
-# Detect-in-app, apply-via-sidebar: the frontend banner reads this and points
-# the user at the single "Update" (or "Install Generation") button in the
-# Pinokio sidebar. We never git-pull from here — a sandboxed web page can't
-# reliably drive Pinokio's script runner, and the backend restarting itself
-# mid-request is fragile.
+# ── Lightweight update / generation health for the web-UI banner ──
+# This compatibility endpoint supplies only the installed/latest version and
+# generation-stack presence. The full authenticated update controls live under
+# /api/auto-update/ and remain responsible for safe checks, installation,
+# verification, rollback, and restart handling.
 import importlib.util as _ilu
 import threading as _threading
 import time as _time

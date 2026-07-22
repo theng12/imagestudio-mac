@@ -10,6 +10,8 @@
   --ok: #6ee7a8;
   --warn: #f3b562;
   --bad: #ef6a6a;
+  --control-font-min: 15px;
+  --control-height-min: 40px;
 }
 
 * { box-sizing: border-box; }
@@ -93,6 +95,24 @@ input {
   color: var(--text);
   border-radius: 6px;
   padding: 6px 10px;
+}
+
+/* Interaction-size floor: native select menus inherit their option size from
+   the control, so a dense parent label must never shrink a picker to 8–10px.
+   Informational chips, table facts, and metadata remain intentionally dense. */
+select,
+select option,
+textarea,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]) {
+  font-size: var(--control-font-min);
+  line-height: 1.35;
+}
+select,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]) {
+  min-height: var(--control-height-min);
+}
+button:not(.link):not(.tile-act):not(.img-drop-clear):not(.variant-details-toggle) {
+  min-height: var(--control-height-min);
 }
 
 .topbar {
@@ -1433,7 +1453,7 @@ input.num-input-wide { width: 130px; }
 .library-sort {
   padding: 8px 10px; background: var(--surface, #18181d);
   border: 1px solid var(--border, #2a2a32); border-radius: 8px;
-  color: var(--text, #ddd); font-size: 0.9em; cursor: pointer;
+  color: var(--text, #ddd); font-size: var(--control-font-min); cursor: pointer;
 }
 .library-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .chip.filter-chip {

@@ -103,6 +103,63 @@ def test_active_work_defers_and_records_reason(updater: AutoUpdater, monkeypatch
     assert status["next_retry"]
 
 
+def test_readiness_failure_defers_when_service_is_not_confirmed_stopped(
+    updater: AutoUpdater, monkeypatch: pytest.MonkeyPatch
+):
+    def unavailable(*_args, **_kwargs):
+        raise OSError("health endpoint unavailable")
+
+    monkeypatch.setattr("backend.auto_update.urlopen", unavailable)
+    monkeypatch.setattr(updater, "_service_loaded", lambda: True)
+    monkeypatch.setattr(updater, "_port_accepting_connections", lambda: False)
+
+    assert updater.readiness_reasons() == [
+        "the update safety check is unavailable and Image Studio is not confirmed stopped"
+    ]
+
+
+def test_readiness_failure_is_safe_only_when_service_is_positively_stopped(
+    updater: AutoUpdater, monkeypatch: pytest.MonkeyPatch
+):
+    def unavailable(*_args, **_kwargs):
+        raise OSError("health endpoint unavailable")
+
+    monkeypatch.setattr("backend.auto_update.urlopen", unavailable)
+    monkeypatch.setattr(updater, "_service_loaded", lambda: False)
+    monkeypatch.setattr(updater, "_port_accepting_connections", lambda: False)
+
+    assert updater.readiness_reasons() == []
+
+
+def test_unresponsive_listener_is_not_treated_as_a_stopped_service(
+    updater: AutoUpdater, monkeypatch: pytest.MonkeyPatch
+):
+    def unavailable(*_args, **_kwargs):
+        raise OSError("health endpoint unavailable")
+
+    monkeypatch.setattr("backend.auto_update.urlopen", unavailable)
+    monkeypatch.setattr(updater, "_service_loaded", lambda: False)
+    monkeypatch.setattr(updater, "_port_accepting_connections", lambda: True)
+
+    assert updater.readiness_reasons()
+
+
+def test_service_state_probe_failure_also_fails_closed(
+    updater: AutoUpdater, monkeypatch: pytest.MonkeyPatch
+):
+    def unavailable(*_args, **_kwargs):
+        raise OSError("health endpoint unavailable")
+
+    monkeypatch.setattr("backend.auto_update.urlopen", unavailable)
+    monkeypatch.setattr(
+        updater,
+        "_service_loaded",
+        lambda: (_ for _ in ()).throw(OSError("launchd unavailable")),
+    )
+
+    assert updater.readiness_reasons()
+
+
 def test_update_after_work_creates_pending_retry(updater: AutoUpdater, monkeypatch):
     monkeypatch.setattr(updater, "readiness_reasons", lambda: ["download active"])
     status = updater.trigger_update(after_current=True)
@@ -206,6 +263,37 @@ def test_service_and_pinokio_modes_restart_only_their_owner(updater: AutoUpdater
     assert calls == [("/bin/bash", "install_service.sh"), ("pterm", "start")]
 
 
+def test_generation_dependency_refresh_uses_qualified_lock(
+    updater: AutoUpdater, monkeypatch: pytest.MonkeyPatch
+):
+    lock = updater.root / "app" / "requirements-generation.lock.txt"
+    lock.write_text("mflux==0.17.5\n")
+    marker = updater.root / "conda_env" / "lib" / "python3.12" / "site-packages" / "mflux"
+    marker.mkdir(parents=True)
+    updater.spec.update({
+        "generation_marker": "mflux",
+        "generation_requirements": "requirements-generation.lock.txt",
+    })
+    calls = []
+    monkeypatch.setattr(updater, "_pinokio_home", lambda: updater.root.parent.parent)
+    monkeypatch.setattr(
+        updater,
+        "_run",
+        lambda args, **kwargs: calls.append([str(item) for item in args])
+        or subprocess.CompletedProcess(args, 0, "", ""),
+    )
+
+    updater._install_dependencies()
+
+    requirement_paths = [
+        call[call.index("-r") + 1]
+        for call in calls
+        if "-r" in call
+    ]
+    assert str(lock) in requirement_paths
+    assert not any(path.endswith("requirements-generation.txt") for path in requirement_paths)
+
+
 def test_secrets_are_redacted():
     value = _redact({"hf_token": "hf_secret", "details": "Authorization: Bearer-abc"})
     assert value["hf_token"] == "[redacted]"
@@ -225,4 +313,3 @@ def test_build_suffix_version_matching(updater: AutoUpdater):
     updater.spec["allow_build_suffix"] = True
     assert updater._version_matches("1.22.0.abcdef0", "1.22.0")
     assert not updater._version_matches("1.21.9.abcdef0", "1.22.0")
-

@@ -10,6 +10,41 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.22.4] — 2026-07-23
+
+### Fixed — safer unattended updates and readable controls
+
+- Automatic updates now fail closed when the readiness endpoint cannot be
+  reached. They proceed only when launchd and the local app port positively
+  confirm Image Studio is stopped, preventing a hung worker from being mistaken
+  for an idle one.
+- Generation installation and updates now converge every qualified environment
+  to the complete pinned `requirements-generation.lock.txt`, including the
+  Pinokio installer, one-click updater, automatic updater, and WebUI installer.
+- The startup watchdog now waits for three consecutive failed health probes
+  before restarting the service and clears its failure streak after a successful
+  probe, avoiding disruption from one transient timeout.
+- Pinokio’s service menu now follows the shared Studio action order, uses the
+  common **What's New** label, and keeps release notes visible in every install,
+  update, reset, startup, running, stopped, and service state.
+- Added an interaction-size floor for native pickers, text fields, and standard
+  controls: 15 px text and 40 px height, matching Studio Hub. Model and
+  settings pickers are readable while dense informational metadata keeps its
+  compact layout.
+- Updated the lightweight update banner to point to the current in-app engine
+  and automatic-update controls instead of describing the retired sidebar-only
+  workflow.
+
+### Verification
+
+- Added regression tests for fail-closed readiness, positive stopped-state
+  detection, locked generation dependencies, watchdog streak/reset behavior,
+  dynamic sidebar states and order, minimum control sizing, and update copy.
+- Backend compilation, shell and launcher syntax, frontend syntax, release
+  metadata, generation truth audit, whitespace checks, and the complete Python
+  test suite pass. No live service was restarted, and no dependency install,
+  model download, or generation job was invoked.
+
 ## [1.22.3] — 2026-07-20
 
 ### Added — enforced versioning and What's New release details

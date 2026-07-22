@@ -20,7 +20,7 @@ module.exports = {
     }
     const whatsNewItem = {
       icon: "fa-solid fa-bullhorn",
-      text: "What's New · Updates & Details",
+      text: "What's New",
       href: "CHANGELOG.md"
     }
     const running = {
@@ -98,14 +98,13 @@ module.exports = {
         { icon: "fa-solid fa-stethoscope", text: "Check Service Status", href: "service_status.js" },
         { icon: "fa-solid fa-rotate-right", text: "Restart Service", href: "service_restart.js" },
         { icon: "fa-solid fa-screwdriver-wrench", text: "Repair · take over port", href: "service.js" },
-        // Generation engine install — also offered here (service mode) so users
-        // who installed the startup service can still add the heavy MLX/diffusers
-        // deps. install_generation.js detects the service and restarts it after.
-        generationItem,
         { icon: "fa-solid fa-folder-open", text: "Service Logs", href: "logs/service?fs=true" },
         { icon: "fa-solid fa-file-image", text: "Outputs", href: "app/output?fs=true" },
         { icon: "fa-solid fa-folder-tree", text: "HF Cache", href: "cache/HF_HOME/hub?fs=true" },
         { icon: "fa-regular fa-circle-xmark", text: "Uninstall Startup Service", href: "unservice.js" },
+        // Keep the shared Studio service-menu order, then expose the optional
+        // generation maintenance action immediately before Update.
+        generationItem,
         { icon: "fa-solid fa-rotate", text: "Update", href: "update.js" },
         whatsNewItem
       ]

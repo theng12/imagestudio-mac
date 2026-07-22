@@ -8,9 +8,9 @@
 // but in service mode the server IS the launchd service — so it stopped nothing
 // and then started a SECOND server that fought the service for the fixed port.
 // The restart here is service-aware and mutually exclusive: kickstart the
-// service, OR start start.js — never both. Deps install from source
-// (requirements*.txt, not the .lock) because a drifted lock can silently omit
-// packages.
+// service, OR start start.js — never both. Base dependencies keep their
+// established update path; an existing generation environment is converged to
+// the complete, release-qualified generation lock.
 module.exports = {
   run: [
     {
@@ -48,7 +48,7 @@ module.exports = {
         path: "app",
         conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
         message: [
-          "uv pip install -r requirements-generation.txt"
+          "uv pip install -r requirements-generation.lock.txt"
         ]
       }
     },
