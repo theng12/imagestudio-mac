@@ -389,9 +389,19 @@ class AutoUpdater:
         try:
             with urlopen(Request(url, headers={"User-Agent": "KH-Studio-Updater/1"}), timeout=4) as response:
                 data = json.loads(response.read().decode("utf-8"))
+            if not isinstance(data, dict) or not isinstance(data.get("reasons"), list):
+                raise UpdateError("The readiness endpoint returned an invalid response.")
             return [str(x) for x in data.get("reasons", []) if x]
         except Exception:
-            return []  # a stopped app owns no active jobs
+            # A failed health/readiness request is not proof that the app owns no
+            # work: it may be alive-but-hung while an inference thread is still
+            # active. Only allow an update when launchd says the service is not
+            # loaded AND nothing is accepting connections on the app port.
+            if self._service_positively_stopped():
+                return []
+            return [
+                "the update safety check is unavailable and Image Studio is not confirmed stopped"
+            ]
 
     def readiness_status(self) -> dict:
         reasons = self.readiness_reasons()
@@ -438,6 +448,24 @@ class AutoUpdater:
         if not label:
             return False
         return self._launchctl("print", f"gui/{os.getuid()}/{label}").returncode == 0
+
+    def _port_accepting_connections(self) -> bool:
+        try:
+            with socket.create_connection(
+                ("127.0.0.1", int(self.spec["port"])), timeout=0.75
+            ):
+                return True
+        except OSError:
+            return False
+
+    def _service_positively_stopped(self) -> bool:
+        """Prove the updater is not looking at an unresponsive live service."""
+        try:
+            return not self._service_loaded() and not self._port_accepting_connections()
+        except Exception:
+            # An unavailable launchd/process-state check is uncertainty, not
+            # evidence that it is safe to stop an app and replace its files.
+            return False
 
     def _health_alive(self) -> bool:
         try:
@@ -498,7 +526,9 @@ class AutoUpdater:
                  else [str(python), "-m", "pip", "install"]
         self._run([*prefix, "-r", str(base)], cwd=self.root / "app", timeout=1200)
         marker = self.spec.get("generation_marker")
-        generation = self.root / "app" / self.spec.get("generation_requirements", "requirements-generation.txt")
+        generation = self.root / "app" / self.spec.get(
+            "generation_requirements", "requirements-generation.lock.txt"
+        )
         if marker and generation.is_file() and any((self.root / "conda_env" / "lib").glob(f"python*/site-packages/{marker}")):
             self._run([*prefix, "-r", str(generation)], cwd=self.root / "app", timeout=1800)
 
@@ -706,4 +736,3 @@ def cli() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(cli())
-

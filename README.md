@@ -52,7 +52,7 @@ and MLX.
 - **Install/Reinstall Generation** — remains available while the regular server
   is running and in startup-service mode. The installer safely refreshes the
   appropriate server when it finishes.
-- **What's New · Updates & Details** — always opens the installed release
+- **What's New** — always opens the installed release
   changelog, including while another launcher action is in progress.
 - The WebUI version area includes **What's New** and opens the same installed
   release history in a modal without leaving Image Studio.
@@ -88,6 +88,10 @@ engine installation to finish. “Update after current work” keeps retrying un
 the app is idle. Every attempt verifies the expected GitHub repository, clean
 fast-forward history, free disk space, dependencies, imports, health, and the
 running version; a failed post-update verification triggers a bounded rollback.
+If the local readiness endpoint cannot be reached, installation fails closed
+unless launchd and the app port positively confirm that Image Studio is stopped.
+Qualified generation environments are restored from the complete pinned
+generation lock rather than resolving new ML package versions during an update.
 
 Updater status is available through `GET /api/auto-update/status` and readiness
 through `GET /api/auto-update/readiness`. Settings, manual checks, updates, and
@@ -351,7 +355,9 @@ In the Pinokio sidebar click **❤️ Install as Startup Service**. It:
 - Installs a macOS **launchd LaunchAgent** that runs the server (`serve.sh`) on **port 47868**.
 - **Starts automatically** every time you log in (so it comes back after a reboot).
 - **Restarts itself if it crashes** (launchd `KeepAlive`).
-- Adds a **health watchdog** that pings `/api/health` every 60s and relaunches the server if it ever hangs.
+- Adds a **health watchdog** that pings `/api/health` every 60s and relaunches
+  the server only after three consecutive failures. A successful probe resets
+  the counter, preventing one transient timeout from interrupting work.
 
 No admin/sudo needed for this step. To remove it later, click **Startup Service: ON — click to remove**. Logs live in `logs/service/`. Reach the API over Tailscale/LAN at `http://<this-mac>:47868`.
 

@@ -1845,12 +1845,10 @@
     </span>
   </footer>
 
-  <!-- ── KH auto-update banner ──────────────────────────────────────────────
-       Self-contained (no Alpine coupling). Reads /api/update-status and, if this
-       install is behind or its generation stack is missing, shows a dismissible
-       notice pointing at the one-click Update / Install Generation button in the
-       Pinokio sidebar. Degrades silently if the endpoint isn't present yet
-       (e.g. a running service that hasn't restarted onto the new build). -->
+  <!-- ── Lightweight update banner ─────────────────────────────────────────
+       Complements the full Automatic updates panel in Settings. It remains
+       self-contained so an older/stale frontend can still surface maintenance
+       needs and direct the user to the current in-app controls. -->
   <script>
   (function () {
     function build(s) {
@@ -1858,11 +1856,11 @@
       if (s.generation_required && s.generation_ok === false) {
         key = "kh-gen-missing"; bg = "#f3b562"; fg = "#1a1204";
         msg = "\u26A0 Generation engine not installed \u2014 the Generate tab won\u2019t work. " +
-              "In the Pinokio sidebar, click Install Generation (or Update).";
+              "Open Generate and choose Install engines, or use Install Generation in Pinokio.";
       } else if (s.update_available && s.latest_version) {
         key = "kh-upd-" + s.latest_version; bg = "#6aa7ff"; fg = "#04122a";
         msg = "\u2B06 Update available (v" + s.app_version + " \u2192 v" + s.latest_version + "). " +
-              "In the Pinokio sidebar, click Update.";
+              "Open Settings \u2192 Automatic updates to review it, or use Update in Pinokio.";
       } else { return; }
       try { if (localStorage.getItem(key) === "1") return; } catch (e) {}
       var bar = document.createElement("div");

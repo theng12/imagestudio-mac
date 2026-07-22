@@ -38,7 +38,7 @@ cat > "$LA/$SRV.plist" <<PLIST
 </plist>
 PLIST
 
-# ── watchdog agent: every 60s, restart the server if /api/health is dead ──
+# ── watchdog agent: every 60s; restart after three consecutive failed probes ──
 cat > "$LA/$WD.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -93,7 +93,7 @@ touch "$ROOT/service/.installed"
 echo ""
 echo "✅ $APPNAME is now an always-on service on port $PORT."
 echo "   • Starts automatically at login, restarts itself if it crashes, and a"
-echo "     watchdog re-launches it if it ever stops responding to /api/health."
+echo "     watchdog re-launches it after three failed /api/health checks."
 echo "   • Logs: $ROOT/logs/service/"
 echo "   • Reach it over Tailscale/LAN at  http://<this-mac>:$PORT"
 echo ""

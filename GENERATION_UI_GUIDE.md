@@ -9,8 +9,8 @@ kept behind **Fine tune**.
 - `app/backend/catalog.py` owns model capabilities and `generation_profile()`.
 - `app/frontend/app.js` applies model defaults and derives readiness.
 - `app/frontend/index.html` renders controls only through `supportsControl()`.
-- `app/backend/generation_installer.py` installs only
-  `app/requirements-generation.txt`; it never accepts arbitrary packages or
+- `app/backend/generation_installer.py` installs only the release-qualified
+  `app/requirements-generation.lock.txt`; it never accepts arbitrary packages or
   commands from the browser.
 
 ## Adding or changing a model
@@ -28,9 +28,10 @@ kept behind **Fine tune**.
 4. Keep high-quality, safe defaults in the profile. Changing model selection
    applies them automatically; users can override supported values under
    **Fine tune**.
-5. If a new local engine needs packages, add pinned requirements to
-   `requirements-generation.txt`, its package probes to `generation.py`, and
-   its family dispatch before marking the engine ready.
+5. If a new local engine needs packages, update the floors in
+   `requirements-generation.txt`, qualify the resulting environment, regenerate
+   `requirements-generation.lock.txt`, add its package probes to `generation.py`,
+   and wire its family dispatch before marking the engine ready.
 
 ## Readiness states
 

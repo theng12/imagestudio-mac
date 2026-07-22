@@ -18,7 +18,7 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = APP_DIR.parent
-REQUIREMENTS = APP_DIR / "requirements-generation.txt"
+REQUIREMENTS = APP_DIR / "requirements-generation.lock.txt"
 STATUS_FILE = APP_DIR / ".generation-install.json"
 LOG_FILE = PROJECT_DIR / "logs" / "generation-install.log"
 SERVICE_MARKER = PROJECT_DIR / "service" / ".installed"

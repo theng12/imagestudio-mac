@@ -1,12 +1,10 @@
 // Heavy install: adds the generation stack to the existing conda_env. Required
 // for any generation endpoint to work. Safe to run more than once.
 //
-// SOURCE-FIRST (not the lock): install from `requirements-generation.txt`, the
-// authoritative range file that actually lists the heavy deps. We deliberately
-// do NOT install `requirements-generation.lock.txt` — a drifted lock once
-// shipped containing ONLY base web-server packages, so "Install Generation"
-// installed nothing, generation silently never worked, and the UI still
-// reported success. Installing from source can't have that failure mode.
+// QUALIFIED LOCK: install the complete, checked-in generation lock so every Mac
+// receives the same MLX/mflux/Diffusers runtime that passed release testing.
+// The lock includes both base and generation packages and is regenerated only
+// after the range requirements have been deliberately upgraded and qualified.
 //
 // VERIFY-THEN-NOTIFY: after installing we import the key modules. A failure
 // prints a traceback, the matcher breaks the run, and the success notify never
@@ -32,7 +30,7 @@ module.exports = {
         path: "app",
         conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
         message: [
-          "uv pip install -r requirements-generation.txt"
+          "uv pip install -r requirements-generation.lock.txt"
         ]
       }
     },
