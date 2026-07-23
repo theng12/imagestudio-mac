@@ -10,6 +10,21 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.22.5] — 2026-07-23
+
+### Changed — 30-day fleet backup retention
+
+- Raised the generated-image backup retention default from 3 days to 30 days
+  while keeping the existing 80 GB hard cap and oldest-first emergency cleanup.
+- Existing saved 3-day policies migrate automatically once during update.
+  Explicit retention choices made after migration remain respected, so no
+  operator needs to visit individual workers.
+
+### Verification
+
+- Added regression coverage for the one-time saved-policy migration and for
+  preserving an explicit post-migration 3-day choice. **Just run Update.**
+
 ## [1.22.4] — 2026-07-23
 
 ### Fixed — safer unattended updates and readable controls
