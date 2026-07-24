@@ -10,6 +10,28 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.22.6] — 2026-07-24
+
+### Fixed — verified memory recovery and restart visibility
+
+- Local image generation now distinguishes real allocator exhaustion from
+  validation, provider, network, cancellation, disk, and other ordinary
+  failures. A verified memory failure evicts cached engines and Metal memory,
+  then retries exactly once with the same resolved seed.
+- If that retry also runs out of memory, an Image Studio installed under the
+  startup service exits only after recording the terminal job result so launchd
+  can restore it automatically. An unsupervised process stays alive rather than
+  disappearing unexpectedly.
+- Health and generation diagnostics now publish privacy-safe memory and bounded
+  watchdog restart-rate evidence. Studio Hub can alert on repeated restarts
+  without receiving prompts, paths, job IDs, or raw customer errors.
+
+### Verification
+
+- Added regression coverage for same-seed recovery, repeated-failure supervised
+  restart, cloud and ordinary failure exclusions, diagnostic privacy, and
+  watchdog restart-rate classification. **Just run Update.**
+
 ## [1.22.5] — 2026-07-23
 
 ### Changed — 30-day fleet backup retention

@@ -178,6 +178,14 @@ The WebUI footer shows the running version. The same value is also surfaced at:
 - `GET /api/health` → includes `app_version`
 - `GET /api/generate/diagnostics` → includes `app_version`
 
+Local generation also has verified memory self-protection. Image Studio retries
+one genuine allocator failure after unloading cached engines and preserving the
+resolved seed. A second allocator failure requests a supervised restart only
+when the startup service is installed; normal validation, cloud-provider,
+network, cancellation, and disk errors never trigger that path. `/api/health`
+and `/api/generate/diagnostics` expose privacy-safe memory and watchdog
+restart-rate evidence for Studio Hub alerts.
+
 ## Truth audit (for contributors)
 
 The Models tab shows a green "✓ engine ready" chip per model. That chip is driven by the `_WIRED_FAMILIES` set in `app/backend/generation.py`. If a family is in `_WIRED_FAMILIES` but its dispatch branch raises `NotImplementedError`, users see a green chip and then hit a wall when they click Generate.

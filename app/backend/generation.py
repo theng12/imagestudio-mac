@@ -41,6 +41,42 @@ _GEN_LOCK = threading.Lock()
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 HISTORY_FILE = OUTPUT_DIR / ".history.json"
 HISTORY_MAX = 200   # keep last N completed jobs; oldest are trimmed off disk
+MEMORY_RETRY_LIMIT = 1
+MEMORY_RESTART_FAILURES = 2
+
+
+def _memory_snapshot() -> Optional[dict]:
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        return {
+            "total_gb": round(vm.total / 1e9, 2),
+            "available_gb": round(vm.available / 1e9, 2),
+            "used_gb": round(vm.used / 1e9, 2),
+            "percent": float(vm.percent),
+        }
+    except Exception:
+        return None
+
+
+def _is_memory_failure(exc: BaseException) -> bool:
+    """Recognize verified allocator failures without classifying normal errors."""
+    if isinstance(exc, MemoryError):
+        return True
+    message = f"{type(exc).__name__}: {exc}".lower()
+    return any(
+        marker in message
+        for marker in (
+            "out of memory",
+            "out-of-memory",
+            "mps backend out of memory",
+            "cannot allocate memory",
+            "failed to allocate memory",
+            "metal allocation failed",
+            "mlx allocation failed",
+            "std::bad_alloc",
+        )
+    )
 
 
 def _package_revision(name: str) -> str:
@@ -325,6 +361,10 @@ class GenerationManager:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._jobs: dict[str, GenerationJob] = {}
+        self._consecutive_memory_failures = 0
+        self._last_memory_event: Optional[dict] = None
+        self._restart_scheduled = False
+        self._restart_timer_started = False
         self._load_history()
 
     # ----- public API -----
@@ -344,6 +384,15 @@ class GenerationManager:
             "runtime_revision": runtime_revision(),
         }
 
+    def memory_status(self) -> dict:
+        return {
+            "snapshot": _memory_snapshot(),
+            "consecutive_failures": self._consecutive_memory_failures,
+            "restart_scheduled": self._restart_scheduled,
+            "last_event": self._last_memory_event,
+            "service_supervised": self._service_installed(),
+        }
+
     def list_jobs(self) -> list[GenerationJob]:
         return list(self._jobs.values())
 
@@ -357,38 +406,143 @@ class GenerationManager:
             raise RuntimeError("image generation is active")
         if not _GEN_LOCK.acquire(blocking=False):
             raise RuntimeError("the generation engine is still finishing work")
-        actions: list[str] = []
         try:
-            previous = getattr(self, "_diffusers_pipe", None)
-            if previous is not None:
-                self._diffusers_pipe = None
-                del previous
-                actions.append("diffusers pipeline unloaded")
-            import gc
-            gc.collect()
-            actions.append("Python objects collected")
-            try:
-                import torch  # type: ignore
-                if torch.backends.mps.is_available():
-                    torch.mps.empty_cache()
-                    actions.append("PyTorch MPS cache cleared")
-            except Exception:
-                pass
-            try:
-                import mlx.core as mx  # type: ignore
-                if hasattr(mx, "synchronize"):
-                    mx.synchronize()
-                if hasattr(mx, "clear_cache"):
-                    mx.clear_cache()
-                    actions.append("MLX Metal cache cleared")
-                elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
-                    mx.metal.clear_cache()
-                    actions.append("MLX Metal cache cleared")
-            except Exception:
-                pass
-            return {"released": True, "actions": actions}
+            return self._release_memory_locked("manual")
         finally:
             _GEN_LOCK.release()
+
+    def _release_memory_locked(self, reason: str = "memory-recovery") -> dict:
+        """Evict cached engines while the generation lock is already held."""
+        actions: list[str] = []
+        previous = getattr(self, "_diffusers_pipe", None)
+        if previous is not None:
+            self._diffusers_pipe = None
+            del previous
+            actions.append("diffusers pipeline unloaded")
+        import gc
+        gc.collect()
+        actions.append("Python objects collected")
+        try:
+            import torch  # type: ignore
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+                actions.append("PyTorch MPS cache cleared")
+        except Exception:
+            pass
+        try:
+            import mlx.core as mx  # type: ignore
+            if hasattr(mx, "synchronize"):
+                mx.synchronize()
+            if hasattr(mx, "clear_cache"):
+                mx.clear_cache()
+                actions.append("MLX Metal cache cleared")
+            elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
+                mx.metal.clear_cache()
+                actions.append("MLX Metal cache cleared")
+        except Exception:
+            pass
+        return {"released": True, "actions": actions, "reason": reason}
+
+    @staticmethod
+    def _service_installed() -> bool:
+        root = Path(__file__).resolve().parents[2]
+        return (root / "service" / ".installed").is_file()
+
+    def _record_memory_failure(self, job: GenerationJob, exc: BaseException) -> None:
+        self._consecutive_memory_failures += 1
+        self._last_memory_event = {
+            "time": time.time(),
+            # Health and diagnostics must never expose request or job identity.
+            "error_type": type(exc).__name__,
+            "snapshot": _memory_snapshot(),
+        }
+        self._release_memory_locked()
+        print(
+            f"[gen] verified memory failure {self._consecutive_memory_failures}/"
+            f"{MEMORY_RESTART_FAILURES}; caches evicted",
+            file=sys.stderr,
+            flush=True,
+        )
+        if (
+            self._consecutive_memory_failures < MEMORY_RESTART_FAILURES
+            or self._restart_scheduled
+        ):
+            return
+        if not self._service_installed():
+            print(
+                "[gen] repeated memory failures detected without a supervised "
+                "startup service; keeping Image Studio alive",
+                file=sys.stderr,
+                flush=True,
+            )
+            return
+        self._restart_scheduled = True
+
+    def _start_scheduled_restart(self) -> None:
+        """Exit only after the caller has persisted the terminal job state."""
+        if not self._restart_scheduled or self._restart_timer_started:
+            return
+        self._restart_timer_started = True
+
+        def _exit_for_launchd() -> None:
+            print(
+                "[gen] restarting Image Studio after repeated memory failures; "
+                "launchd KeepAlive will bring it back",
+                file=sys.stderr,
+                flush=True,
+            )
+            os._exit(75)
+
+        timer = threading.Timer(0.75, _exit_for_launchd)
+        timer.daemon = True
+        timer.start()
+
+    def _dispatch_with_memory_recovery(
+        self,
+        job: GenerationJob,
+        staged_path: Path,
+        final_path: Path,
+        dispatch,
+        *,
+        local: bool,
+    ) -> None:
+        memory_retries = 0
+        while True:
+            try:
+                dispatch(job, staged_path)
+                if local:
+                    self._consecutive_memory_failures = 0
+                return
+            except Exception as exc:
+                self._discard_path(staged_path)
+                self._discard_path(final_path)
+                job.output_path = None
+                job.asset_evidence = {}
+                verified_memory_failure = local and _is_memory_failure(exc)
+                if verified_memory_failure:
+                    self._record_memory_failure(job, exc)
+                    if (
+                        memory_retries < MEMORY_RETRY_LIMIT
+                        and not self._restart_scheduled
+                    ):
+                        memory_retries += 1
+                        if job.resolved_seed is not None:
+                            job.params["seed"] = job.resolved_seed
+                        print(
+                            f"[gen] evicted caches after memory failure on {job.job_id}; "
+                            f"retrying once ({memory_retries}/{MEMORY_RETRY_LIMIT})",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        continue
+                elif local:
+                    self._consecutive_memory_failures = 0
+                if self._restart_scheduled:
+                    raise RuntimeError(
+                        "Repeated memory failures; Image Studio is restarting "
+                        "automatically under launchd supervision."
+                    ) from exc
+                raise
 
     def cancel(self, job_id: str) -> bool:
         """
@@ -753,7 +907,13 @@ class GenerationManager:
             final_path = OUTPUT_DIR / f"{job.job_id}.png"
             try:
                 self._discard_path(staged_path)
-                self._dispatch_edit(job, staged_path)
+                self._dispatch_with_memory_recovery(
+                    job,
+                    staged_path,
+                    final_path,
+                    self._dispatch_edit,
+                    local=True,
+                )
                 if job.cancel_event.is_set():
                     job.state = "cancelled"
                     self._discard_path(staged_path)
@@ -779,6 +939,7 @@ class GenerationManager:
                 self._cleanup_uploaded_inputs(job)
                 self._persist()
                 memory_policy.mark_generation_finished()
+                self._start_scheduled_restart()
 
     def _dispatch_edit(self, job: GenerationJob, output_path: Path) -> None:
         """
@@ -971,7 +1132,13 @@ class GenerationManager:
             final_path = OUTPUT_DIR / f"{job.job_id}.png"
             try:
                 self._discard_path(staged_path)
-                self._dispatch_txt2img(job, staged_path)
+                self._dispatch_with_memory_recovery(
+                    job,
+                    staged_path,
+                    final_path,
+                    self._dispatch_txt2img,
+                    local=not _is_cloud,
+                )
                 if job.cancel_event.is_set():
                     job.state = "cancelled"
                     self._discard_path(staged_path)
@@ -997,6 +1164,7 @@ class GenerationManager:
                 self._cleanup_uploaded_inputs(job)
                 self._persist()
                 memory_policy.mark_generation_finished()
+                self._start_scheduled_restart()
 
     def _dispatch_txt2img(self, job: GenerationJob, output_path: Path) -> None:
         """
