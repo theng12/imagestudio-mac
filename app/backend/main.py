@@ -50,6 +50,7 @@ from .downloads import manager
 from .generation import manager as gen_manager, diagnostics as gen_diagnostics
 from .generation import OUTPUT_DIR
 from .imports import import_path, scan_for_candidates
+from .restart_health import restart_rate_snapshot
 from .fleet_auth import load_token as load_fleet_token, make_middleware as fleet_middleware, manifest
 from .auto_update import UpdateError
 from .auto_update_config import create_updater
@@ -332,6 +333,8 @@ def health() -> dict:
             "running": generation["running"],
             "runtime_revision": generation["runtime_revision"],
         },
+        "memory": gen_manager.memory_status()["snapshot"],
+        "restart_health": restart_rate_snapshot(),
     }
 
 
@@ -862,6 +865,8 @@ def generation_diagnostics() -> dict:
     extra round-trip."""
     data = gen_diagnostics()
     data["app_version"] = APP_VERSION
+    data["memory_recovery"] = gen_manager.memory_status()
+    data["restart_health"] = restart_rate_snapshot()
     return data
 
 
