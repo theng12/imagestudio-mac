@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -85,6 +86,16 @@ def test_all_generation_installers_use_the_qualified_lock():
     assert expected in (ROOT / "update.js").read_text(encoding="utf-8")
     assert expected in (ROOT / "app/backend/auto_update_config.py").read_text(encoding="utf-8")
     assert expected in (ROOT / "app/backend/generation_installer.py").read_text(encoding="utf-8")
+
+
+def test_all_launcher_stops_use_canonical_app_local_uris():
+    for name in ("update.js", "install_generation.js"):
+        source = (ROOT / name).read_text(encoding="utf-8")
+        assert 'uri: "{{path.resolve(cwd, \'start.js\')}}"' in source
+        assert not re.search(
+            r'method:\s*"script\.stop",\s*params:\s*\{\s*uri:\s*"start\.js"',
+            source,
+        )
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node is required for launcher contract checks")

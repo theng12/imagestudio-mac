@@ -10,6 +10,24 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [1.22.7] — 2026-07-24
+
+### Fixed — Pinokio 8 manual-mode update crash
+
+- One-click Update and Install Generation now resolve this app's `start.js` to
+  its canonical absolute path before calling Pinokio's `script.stop` API.
+  Pinokio 8.0.40 no longer receives the rejected bare relative URI that could
+  crash its interface with an unhandled rejection.
+- Startup-service behavior, dependency locks, model installation, generation
+  queues, and active jobs are otherwise unchanged.
+
+### Verification
+
+- Added launcher contract coverage requiring canonical stop URIs in every
+  Image Studio maintenance path. Node syntax, release metadata, generation
+  truth checks, backend compilation, and the complete test suite pass.
+  **Just run Update.**
+
 ## [1.22.6] — 2026-07-24
 
 ### Fixed — verified memory recovery and restart visibility
