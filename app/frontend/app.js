@@ -48,9 +48,12 @@ function studio() {
       repo: "",
       prompt: "",
       negativePrompt: "",
-      aspect: "1:1",
-      width: 1024,
-      height: 1024,
+      aspect: "16:9",
+      resolution: "1K",
+      width: 1280,
+      height: 720,
+      sizeUnavailable: false,
+      moreRatiosOpen: false,
       steps: 4,
       guidance: 3.5,
       seed: -1,
@@ -771,6 +774,7 @@ function studio() {
       if (this.supportsControl("prompt") && !this.gen.prompt.trim()) return false;
       if (this.gen.submitting) return false;
       if (this.gen.repo && !this.isModelReady(this.gen.repo)) return false;
+      if (!this.selectedResolutionAvailable()) return false;
       // img2img/edit need an input image too
       if ((this.gen.mode === "img2img" || this.gen.mode === "edit") && !this.gen.inputImageFile) {
         return false;
@@ -1713,7 +1717,13 @@ function studio() {
           this.pickAspect(this.gen.presets[0]);
         } else if (this.gen.presets.length) {
           const cur = this.gen.presets.find(p => p.ratio === this.gen.aspect);
-          if (cur) { this.gen.width = cur.width; this.gen.height = cur.height; }
+          if (cur) {
+            const size = (cur.sizes || []).find(s => s.resolution === this.gen.resolution)
+              || this.selectedSizeFor(cur);
+            this.gen.width = size.width;
+            this.gen.height = size.height;
+            this.gen.sizeUnavailable = size.resolution !== this.gen.resolution || size.available === false;
+          }
         }
       } catch {
         this.gen.available = false;
@@ -1803,15 +1813,52 @@ function studio() {
 
     pickAspect(p) {
       this.gen.aspect = p.ratio;
-      this.gen.width = p.width;
-      this.gen.height = p.height;
+      const exact = (p.sizes || []).find(s => s.resolution === this.gen.resolution);
+      const size = exact || this.selectedSizeFor(p);
+      this.gen.width = size.width;
+      this.gen.height = size.height;
+      this.gen.sizeUnavailable = !exact || size.available === false;
+    },
+
+    primaryPresets() {
+      return this.gen.presets.slice(0, 3);
+    },
+
+    morePresets() {
+      return this.gen.presets.slice(3);
+    },
+
+    selectedSizeFor(p) {
+      const sizes = p?.sizes || [];
+      return sizes.find(s => s.resolution === this.gen.resolution)
+        || sizes.find(s => s.available !== false)
+        || sizes[0]
+        || { resolution: p?.resolution || "1K", width: p?.width || 1024, height: p?.height || 1024 };
+    },
+
+    genResolutionOptions() {
+      const p = this.gen.presets.find(item => item.ratio === this.gen.aspect);
+      return p?.sizes || [];
+    },
+
+    pickResolution(size) {
+      if (!size || size.available === false) return;
+      this.gen.resolution = size.resolution;
+      this.gen.width = size.width;
+      this.gen.height = size.height;
+      this.gen.sizeUnavailable = false;
+    },
+
+    selectedResolutionAvailable() {
+      return this.genResolutionOptions().some(size => size.resolution === this.gen.resolution && size.available !== false);
     },
 
     aspectShape(p) {
       // Build a small rectangle whose proportions reflect the aspect ratio,
       // capped to a tile-sized box so the grid stays orderly.
       const max = 28;
-      const ratio = p.width / p.height;
+      const selected = this.selectedSizeFor(p);
+      const ratio = selected.width / selected.height;
       const w = ratio >= 1 ? max : Math.round(max * ratio);
       const h = ratio >= 1 ? Math.round(max / ratio) : max;
       return `width:${w}px;height:${h}px;`;
@@ -1940,6 +1987,8 @@ function studio() {
             }
             fd.append("width", String(this.gen.width));
             fd.append("height", String(this.gen.height));
+            fd.append("aspect_ratio", this.gen.aspect);
+            fd.append("resolution", this.gen.resolution);
             fd.append("steps", String(this.gen.steps));
             fd.append("guidance", String(this.gen.guidance));
             fd.append("seed", String(seedForThis));
@@ -1960,6 +2009,8 @@ function studio() {
               negative_prompt: this.gen.negativePrompt.trim(),
               width: this.gen.width,
               height: this.gen.height,
+              aspect_ratio: this.gen.aspect,
+              resolution: this.gen.resolution,
               steps: this.gen.steps,
               guidance: this.gen.guidance,
               seed: seedForThis,

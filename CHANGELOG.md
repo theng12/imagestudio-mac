@@ -8,6 +8,29 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.22.9] — 2026-08-01
+
+### Added — approved 1K/2K image-size standard
+
+- Replaced the local size ladder with the GenStudio standard: true-ratio,
+  /16-aligned 1K and 2K dimensions, ordered Wide 16:9, Tall 9:16, Square 1:1,
+  then the remaining ratios under More ratios.
+- The Generate form now records ratio and resolution on every job, displays
+  the selected pixel dimensions, and rejects a stale or unavailable local
+  2K selection instead of silently downgrading it.
+- Final local PNG validation confirms the artifact dimensions match the
+  selected canvas; historical jobs and assets retain their existing metadata.
+
+### Fixed — true 16:9 Klein landscape preset
+
+- Changed the local FLUX.2 Klein balanced landscape canvas from 1344×768
+  (7:4) to 1280×720 (exact 16:9), while retaining the /16 alignment required
+  by the MLX runtime.
+- Updated both the Generate availability presets and the model catalog size
+  ladder so clients receive the same corrected default.
+- The availability presets are now derived from the same local catalog ladder,
+  so future ratio changes propagate to both endpoints automatically.
+
 ---
 
 ## [1.22.7] — 2026-07-24

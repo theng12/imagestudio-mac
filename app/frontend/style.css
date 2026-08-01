@@ -7,6 +7,7 @@
   --muted: #8a91a0;
   --accent: #6aa7ff;
   --accent-2: #4f8bdb;
+  --selection: #9b7cff;
   --ok: #6ee7a8;
   --warn: #f3b562;
   --bad: #ef6a6a;
@@ -689,9 +690,23 @@ input.num-input-wide { width: 130px; }
   gap: 6px;
 }
 .generate-page .aspect-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.generate-page .aspect-primary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .generate-page .aspect { min-height: 62px; padding: 6px 3px; }
-.generate-page .aspect.active { border-color: #75ddbd; background: rgba(77, 189, 154, .1); }
-.generate-page .aspect.active .ar-shape { background: #75ddbd; }
+.generate-page .aspect.active { border-color: var(--selection); background: color-mix(in srgb, var(--selection) 14%, transparent); }
+.generate-page .aspect.active .ar-shape { background: var(--selection); }
+
+.more-ratios { margin-top: 8px; }
+.more-ratios > summary { cursor: pointer; color: var(--muted); font-size: 12px; padding: 4px 2px; }
+.more-ratios > summary span { color: var(--selection); margin-left: 4px; }
+.aspect-more-grid { margin-top: 4px; }
+.resolution-picker { margin-top: 12px; }
+.resolution-title { display: block; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.resolution-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.resolution-option { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); text-align: left; }
+.resolution-option small { color: var(--muted); font-size: 11px; }
+.resolution-option em { color: var(--bad); font-size: 10px; font-style: normal; }
+.resolution-option.active { border-color: var(--selection); background: color-mix(in srgb, var(--selection) 14%, transparent); }
+.resolution-option:disabled { cursor: not-allowed; opacity: .55; }
 
 .advanced-toggle {
   width: 100%;
@@ -787,6 +802,7 @@ input.num-input-wide { width: 130px; }
   .readiness-actions { padding-left: 25px; }
   .generate-page .gen-grid { grid-template-columns: 1fr; }
   .generate-page .aspect-grid { grid-template-columns: repeat(4, 1fr); }
+  .generate-page .aspect-primary-grid { grid-template-columns: repeat(3, 1fr); }
   .gen-output {
     position: static;
     max-height: none;
