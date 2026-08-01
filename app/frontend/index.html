@@ -268,16 +268,51 @@
               <span x-show="selectedModel.cloud_provider==='cloudflare'">For custom ratios on Cloudflare, switch to <strong>SDXL</strong>, <strong>SDXL-Lightning</strong>, or <strong>Leonardo Lucid/Phoenix</strong>.</span>
             </p>
           </template>
-          <div class="aspect-grid" x-show="!selectedModel || selectedModel.supports_custom_dimensions !== false">
-            <template x-for="p in gen.presets" :key="p.ratio">
-              <button class="aspect"
-                      :class="{active: gen.aspect===p.ratio}"
-                      @click="pickAspect(p)">
-                <span class="ar-shape" :style="aspectShape(p)"></span>
-                <span class="ar-label" x-text="p.ratio"></span>
-                <span class="ar-px" x-text="p.width+'×'+p.height"></span>
-              </button>
-            </template>
+          <div x-show="!selectedModel || selectedModel.supports_custom_dimensions !== false">
+            <div class="aspect-grid aspect-primary-grid">
+              <template x-for="p in primaryPresets()" :key="p.ratio">
+                <button class="aspect"
+                        :class="{active: gen.aspect===p.ratio}"
+                        @click="pickAspect(p)">
+                  <span class="ar-shape" :style="aspectShape(p)"></span>
+                  <span class="ar-label" x-text="p.label + ' ' + p.ratio"></span>
+                  <span class="ar-px" x-text="selectedSizeFor(p).width+'×'+selectedSizeFor(p).height"></span>
+                </button>
+              </template>
+            </div>
+            <details class="more-ratios" x-show="gen.presets.length > 3" :open="gen.moreRatiosOpen">
+              <summary @click.prevent="gen.moreRatiosOpen=!gen.moreRatiosOpen">More ratios <span x-text="gen.moreRatiosOpen ? '−' : '+'"></span></summary>
+              <div class="aspect-grid aspect-more-grid">
+                <template x-for="p in morePresets()" :key="p.ratio">
+                  <button class="aspect"
+                          :class="{active: gen.aspect===p.ratio}"
+                          @click="pickAspect(p)">
+                    <span class="ar-shape" :style="aspectShape(p)"></span>
+                    <span class="ar-label" x-text="p.ratio"></span>
+                    <span class="ar-px" x-text="selectedSizeFor(p).width+'×'+selectedSizeFor(p).height"></span>
+                  </button>
+                </template>
+              </div>
+            </details>
+            <div class="resolution-picker" x-show="genResolutionOptions().length > 0">
+              <span class="resolution-title">Output size</span>
+              <div class="resolution-grid">
+                <template x-for="size in genResolutionOptions()" :key="size.resolution">
+                  <button class="resolution-option"
+                          :class="{active: gen.resolution===size.resolution}"
+                          :disabled="size.available === false"
+                          @click="pickResolution(size)">
+                    <span x-text="size.resolution"></span>
+                    <small x-text="size.width+'×'+size.height"></small>
+                    <em x-show="size.available === false">Unavailable</em>
+                  </button>
+                </template>
+              </div>
+              <p class="muted hint">1K and 2K are quality tiers; the pixel dimensions are shown for clarity.</p>
+              <p class="muted hint warning-hint" x-show="!selectedResolutionAvailable()">
+                The selected resolution is unavailable for this ratio. Choose an available tier before generating.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -568,6 +603,15 @@
           <div class="result-details" x-show="gen.currentJob?.params">
             <span class="detail" x-show="gen.currentJob?.params?.width">
               <span class="detail-k">Size</span><span class="detail-v" x-text="gen.currentJob?.params ? gen.currentJob.params.width + '×' + gen.currentJob.params.height : ''"></span>
+            </span>
+            <span class="detail" x-show="gen.currentJob?.params?.aspect_ratio">
+              <span class="detail-k">Ratio</span><span class="detail-v" x-text="gen.currentJob?.params?.aspect_ratio"></span>
+            </span>
+            <span class="detail" x-show="gen.currentJob?.params?.resolution">
+              <span class="detail-k">Resolution</span><span class="detail-v" x-text="gen.currentJob?.params?.resolution"></span>
+            </span>
+            <span class="detail" x-show="gen.currentJob?.final_asset?.width">
+              <span class="detail-k">Output</span><span class="detail-v" x-text="gen.currentJob?.final_asset?.width + '×' + gen.currentJob?.final_asset?.height"></span>
             </span>
             <span class="detail" x-show="gen.currentJob?.resolved_seed != null">
               <span class="detail-k">Seed</span><span class="detail-v" x-text="gen.currentJob?.resolved_seed ?? ''"></span>

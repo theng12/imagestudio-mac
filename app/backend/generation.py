@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from . import catalog, cache, loras, memory_policy
+from . import catalog, cache, loras, memory_policy, sizes as _sizes
 
 
 # ───────────── module-level locks / paths ─────────────
@@ -254,30 +254,15 @@ def diagnostics() -> dict:
 
 
 # ───────────── aspect-ratio presets ─────────────
-# Sizes are chosen to be multiples of 16 (FLUX prefers /16) at ~1MP each
-# so latency is roughly comparable across ratios.
+# Sizes are chosen from the approved /16-aligned 1K/2K GenStudio ladder.
 
-ASPECT_PRESETS: dict[str, tuple[int, int]] = {
-    "1:1":  (1024, 1024),
-    "16:9": (1344, 768),
-    "9:16": (768, 1344),
-    "4:3":  (1152, 864),
-    "3:4":  (864, 1152),
-    "3:2":  (1216, 832),
-    "2:3":  (832, 1216),
-    "5:4":  (1120, 896),
-    "4:5":  (896, 1120),
-    "21:9": (1536, 640),
-    "2:1":  (1408, 704),
-    "1:2":  (704, 1408),
-}
+# One source of truth: the approved 1K local catalog ladder drives both the
+# Generate UI defaults and the machine-readable availability endpoint.
+ASPECT_PRESETS: dict[str, tuple[int, int]] = _sizes.local_default_presets()
 
 
 def aspect_options() -> list[dict]:
-    return [
-        {"ratio": ratio, "width": w, "height": h}
-        for ratio, (w, h) in ASPECT_PRESETS.items()
-    ]
+    return _sizes.local_aspect_options()
 
 
 # ───────────── job model ─────────────
@@ -830,6 +815,18 @@ class GenerationManager:
             width, height = image.size
         if image_format != "PNG" or width < 1 or height < 1:
             raise RuntimeError("generation did not produce a valid PNG asset")
+
+        # Local generations must publish the exact selected canvas. This keeps
+        # a runtime/provider downgrade from being silently presented as the
+        # requested 2K output. Cloud routes can legitimately choose their own
+        # dimensions and are therefore excluded from this check.
+        model = catalog.get_model(str(job.params.get("repo", "")))
+        if model is not None and not model.is_cloud and job.params.get("aspect_ratio"):
+            expected = (int(job.params.get("width", 0)), int(job.params.get("height", 0)))
+            if (width, height) != expected:
+                raise RuntimeError(
+                    f"generated dimensions {width}×{height} do not match the selected {expected[0]}×{expected[1]} canvas"
+                )
 
         content = staged_path.read_bytes()
         if not content.startswith(b"\x89PNG\r\n\x1a\n"):

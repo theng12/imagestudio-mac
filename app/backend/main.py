@@ -45,7 +45,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from . import cache, catalog, generation_installer, loras, memory_policy, settings as app_settings, storage_policy
+from . import cache, catalog, generation_installer, loras, memory_policy, settings as app_settings, sizes as _sizes, storage_policy
 from .downloads import manager
 from .generation import manager as gen_manager, diagnostics as gen_diagnostics
 from .generation import OUTPUT_DIR
@@ -173,6 +173,8 @@ class Txt2ImgBody(BaseModel):
     negative_prompt: str = ""              # ignored by distilled klein (g=1.0); used by dev models
     width: int = 1024
     height: int = 1024
+    aspect_ratio: Optional[str] = None
+    resolution: str = "1K"
     steps: int = 4
     guidance: float = 3.5
     seed: Optional[int] = None
@@ -187,7 +189,7 @@ class Txt2ImgBody(BaseModel):
 # unbounded dimensions, steps, prompts, or LoRA lists to a GPU-backed service.
 MAX_PROMPT_CHARS = 10_000
 MIN_IMAGE_SIDE = 512
-MAX_IMAGE_SIDE = 2_048
+MAX_IMAGE_SIDE = 4_096
 MAX_OUTPUT_PIXELS = 4_000_000
 MIN_STEPS = 2
 MAX_STEPS = 100
@@ -247,6 +249,26 @@ def _validate_generation_controls(
         raise HTTPException(status_code=422, detail="lora_scales must contain one value per LoRA")
     if any(not math.isfinite(scale) or abs(scale) > MAX_LORA_SCALE for scale in lora_scales):
         raise HTTPException(status_code=422, detail=f"LoRA scales must be finite and between {-MAX_LORA_SCALE:g} and {MAX_LORA_SCALE:g}")
+
+
+def _validate_local_size_selection(
+    *, repo: str, aspect_ratio: Optional[str], resolution: str,
+    width: int, height: int, is_cloud: bool,
+) -> None:
+    """Reject a stale/unsupported local size instead of silently downgrading it."""
+    if is_cloud or not aspect_ratio:
+        return
+    selected = next((p for p in _sizes.local_aspect_options() if p["ratio"] == aspect_ratio), None)
+    if selected is None:
+        raise HTTPException(status_code=422, detail=f"Unsupported aspect ratio for {repo}: {aspect_ratio}")
+    size = next((s for s in selected["sizes"] if s["resolution"] == resolution), None)
+    if size is None:
+        raise HTTPException(status_code=422, detail=f"Resolution {resolution} is unavailable for {aspect_ratio} on {repo}")
+    if (int(width), int(height)) != (size["width"], size["height"]):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{resolution} {aspect_ratio} must use {size['width']}×{size['height']}px; refresh the size menu and try again",
+        )
 
 
 def _resolve_local_model_revision(repo: str, requested: Optional[str]) -> str:
@@ -902,6 +924,10 @@ def start_txt2img(body: Txt2ImgBody) -> dict:
     model = catalog.get_model(body.repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {body.repo}")
+    _validate_local_size_selection(
+        repo=body.repo, aspect_ratio=body.aspect_ratio, resolution=body.resolution,
+        width=body.width, height=body.height, is_cloud=model.is_cloud,
+    )
     if not model.runtime_compatible:
         raise HTTPException(status_code=409, detail=model.runtime_note or "This model conversion is not supported by the current worker.")
     # Cloud models are an HTTP call — they need neither the local mflux engine
@@ -946,6 +972,8 @@ async def start_img2img(
     negative_prompt: str = Form(""),
     width: int = Form(1024),
     height: int = Form(1024),
+    aspect_ratio: Optional[str] = Form(None),
+    resolution: str = Form("1K"),
     steps: int = Form(4),
     guidance: float = Form(3.5),
     seed: Optional[int] = Form(None),
@@ -975,6 +1003,10 @@ async def start_img2img(
     model = catalog.get_model(repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {repo}")
+    _validate_local_size_selection(
+        repo=repo, aspect_ratio=aspect_ratio, resolution=resolution,
+        width=width, height=height, is_cloud=model.is_cloud,
+    )
     if not model.runtime_compatible:
         raise HTTPException(status_code=409, detail=model.runtime_note or "This model conversion is not supported by the current worker.")
     if "img2img" not in (model.capabilities or ()):
@@ -1001,6 +1033,8 @@ async def start_img2img(
         "negative_prompt": negative_prompt.strip(),
         "width": int(width),
         "height": int(height),
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
         "steps": int(steps),
         "guidance": float(guidance),
         "seed": seed,
@@ -1023,6 +1057,8 @@ async def start_edit(
     prompt: str = Form(...),
     width: int = Form(1024),
     height: int = Form(1024),
+    aspect_ratio: Optional[str] = Form(None),
+    resolution: str = Form("1K"),
     steps: int = Form(4),
     guidance: float = Form(1.0),     # klein-edit defaults to 1.0 (distilled)
     seed: Optional[int] = Form(None),
@@ -1050,6 +1086,10 @@ async def start_edit(
     model = catalog.get_model(repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {repo}")
+    _validate_local_size_selection(
+        repo=repo, aspect_ratio=aspect_ratio, resolution=resolution,
+        width=width, height=height, is_cloud=model.is_cloud,
+    )
     if not model.runtime_compatible:
         raise HTTPException(status_code=409, detail=model.runtime_note or "This model conversion is not supported by the current worker.")
     if "edit" not in (model.capabilities or ()):
@@ -1075,6 +1115,8 @@ async def start_edit(
         "prompt": prompt.strip(),
         "width": int(width),
         "height": int(height),
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
         "steps": int(steps),
         "guidance": float(guidance),
         "seed": seed,
