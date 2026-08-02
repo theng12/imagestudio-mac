@@ -8,6 +8,49 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.22.10] — 2026-08-02
+
+### Added — durable Group A FLUX.2 Klein qualification evidence
+
+- Added a machine-readable audit run and per-checkpoint record for the exact
+  cached `AITRADER/FLUX2-klein-4B-mlx-4bit` revision. The evidence records
+  cache completeness, immutable revision, locked adapter/runtime versions,
+  pinned Apache-2.0 evidence, hardware eligibility, controls, limits, and the
+  real generated artifact result.
+- `GET /api/catalog` now attaches a validated `genstudio_candidate` summary to
+  that exact checkpoint. Its deterministic contract hash binds the approved
+  `image.text_to_image` operation, 1K dimension ladder, runtime revision,
+  controls, limits, and hardware floor. It never claims final
+  `approved_for_genstudio`; Studio Hub retains the separate exposure decision.
+- The candidate also reports its sanitized live capacity independently of the
+  immutable hash: one physical MLX slot when the exact route is ready and idle,
+  or zero while the worker is busy or unready.
+- Added fail-closed validation and focused regression coverage so a malformed,
+  altered, or mismatched audit record cannot silently flow into the sibling
+  catalog.
+
+### Qualified and deliberately excluded
+
+- A true 16:9 1K generation passed on the 16 GB Apple M4 audit worker at the
+  model default of four steps and guidance 1.0. The published 1280×720 PNG
+  matched the requested canvas and recorded immutable model/runtime, seed,
+  duration, byte count, and SHA-256 evidence.
+- Image-to-image and edit remain technical Image Studio capabilities but are
+  deliberately excluded from the sellable candidate. A 2K run was also not
+  attempted on the live 16 GB worker after measured post-1K headroom fell to
+  2.85 GB; 2K remains a general technical preset and is explicitly unqualified
+  by this audit rather than being advertised through the candidate contract.
+- Launcher scripts, the running process, dependency pins, general size menus,
+  historical jobs, and existing outputs are unchanged. The checkout was
+  current and installed generation dependencies matched the checked-in lock.
+
+### Verification
+
+- Verified the cached snapshot has no incomplete blobs or broken links;
+  re-fetched the immutable upstream license and matched its stored SHA-256;
+  completed the real local 1K generation; and passed the focused candidate,
+  catalog, revision-readiness, size, and validation tests. **Just run Update.**
+
 ## [1.22.9] — 2026-08-01
 
 ### Added — approved 1K/2K image-size standard

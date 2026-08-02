@@ -1,0 +1,46 @@
+{
+  "schema": "studio.model-audit.run",
+  "schema_version": 1,
+  "run_id": "2026-08-02-group-a",
+  "started_at": "2026-08-02T05:04:42Z",
+  "completed_at": "2026-08-02T05:09:11Z",
+  "scope": {
+    "group": "A",
+    "modality": "image",
+    "approved_operation": "image.text_to_image",
+    "model_ids": [
+      "AITRADER/FLUX2-klein-4B-mlx-4bit"
+    ]
+  },
+  "host": {
+    "machine_id": "terranash-0205",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "chip": "Apple M4",
+    "unified_memory_gb": 16
+  },
+  "application": {
+    "id": "imagestudio-mac",
+    "version": "1.22.9",
+    "source_revision": "5dc08e3a460d2706d2f73359eb1a3571d776755b"
+  },
+  "records": [
+    {
+      "audit_id": "imagestudio-2026-08-02-flux2-klein-4b-mlx-4bit",
+      "path": "aitrader--flux2-klein-4b-mlx-4bit.audit.json",
+      "audit_status": "passed",
+      "candidate_for_genstudio": true
+    }
+  ],
+  "summary": {
+    "passed": 1,
+    "conditional": 0,
+    "failed": 0,
+    "revoked": 0,
+    "notes": [
+      "Qualification covers the exact 1K text-to-image contract only.",
+      "Image-to-image and edit are technical sibling capabilities but are not approved GenStudio operations.",
+      "2K generation was not run on the 16 GB audit host because post-1K memory headroom was insufficient for a safe live-service test."
+    ]
+  }
+}

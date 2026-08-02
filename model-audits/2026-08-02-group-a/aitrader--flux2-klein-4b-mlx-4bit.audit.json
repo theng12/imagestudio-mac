@@ -1,0 +1,255 @@
+{
+  "schema": "studio.model-audit.record",
+  "schema_version": 1,
+  "run_id": "2026-08-02-group-a",
+  "audit_id": "imagestudio-2026-08-02-flux2-klein-4b-mlx-4bit",
+  "audited_at": "2026-08-02T05:09:11Z",
+  "model": {
+    "internal_model_id": "AITRADER/FLUX2-klein-4B-mlx-4bit",
+    "display_name": "FLUX.2 Klein",
+    "modality": "image",
+    "family": "flux2-klein",
+    "quantization": "mlx-4bit",
+    "base_model_id": "black-forest-labs/FLUX.2-klein-4B",
+    "runtime_revision": "7fd24828501390b67a92c8b66d2fc5a707d0ba1a"
+  },
+  "conclusion": {
+    "audit_status": "passed",
+    "candidate_for_genstudio": true,
+    "approved_operations": [
+      "image.text_to_image"
+    ],
+    "statement": "The exact cached checkpoint passed the approved 1K text-to-image contract on a 16 GB Apple Silicon worker. No reference-image operation is approved by this audit."
+  },
+  "genstudio_candidate": {
+    "schema": "studio.model-audit",
+    "schema_version": 1,
+    "audit_id": "imagestudio-2026-08-02-flux2-klein-4b-mlx-4bit",
+    "audit_status": "passed",
+    "candidate_for_genstudio": true,
+    "contract_hash": "sha256:694a09f638010ec22fcfbf38065f01a8fa9e72e26eac01df0e8b95854672c650",
+    "runtime_revision": "7fd24828501390b67a92c8b66d2fc5a707d0ba1a",
+    "approved_operations": [
+      "image.text_to_image"
+    ],
+    "audited_at": "2026-08-02T05:09:11Z",
+    "adapter": {
+      "id": "imagestudio.flux2_klein.text_to_image",
+      "version": 1,
+      "runtime": {
+        "engine": "mflux",
+        "engine_version": "0.17.5",
+        "framework": "mlx",
+        "framework_version": "0.31.2",
+        "implementation": "mflux.models.flux2.variants.txt2img.flux2_klein.Flux2Klein"
+      }
+    },
+    "controls": {
+      "prompt": {
+        "type": "string",
+        "required": true
+      },
+      "aspect_ratio": {
+        "type": "enum",
+        "default": "16:9",
+        "values": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "5:4",
+          "4:5",
+          "21:9",
+          "2:1",
+          "1:2"
+        ]
+      },
+      "resolution": {
+        "type": "enum",
+        "default": "1K",
+        "values": [
+          "1K"
+        ]
+      },
+      "steps": {
+        "type": "integer",
+        "fixed": 4
+      },
+      "guidance": {
+        "type": "number",
+        "fixed": 1.0
+      },
+      "seed": {
+        "type": "integer",
+        "minimum": -1,
+        "maximum": 4294967295,
+        "default": -1
+      },
+      "negative_prompt": {
+        "supported": false
+      },
+      "reference_images": {
+        "supported": false,
+        "maximum": 0
+      },
+      "loras": {
+        "supported": false
+      }
+    },
+    "input_limits": {
+      "max_prompt_characters": 10000,
+      "max_prompt_tokens": 512,
+      "max_input_images": 0
+    },
+    "output_limits": {
+      "images_per_request": 1,
+      "media_types": [
+        "image/png"
+      ],
+      "resolution_tiers": [
+        "1K"
+      ],
+      "max_output_pixels": 1209600,
+      "dimensions": [
+        {"aspect_ratio": "16:9", "resolution": "1K", "width": 1280, "height": 720, "default": true},
+        {"aspect_ratio": "9:16", "resolution": "1K", "width": 720, "height": 1280},
+        {"aspect_ratio": "1:1", "resolution": "1K", "width": 1024, "height": 1024},
+        {"aspect_ratio": "4:3", "resolution": "1K", "width": 1152, "height": 864},
+        {"aspect_ratio": "3:4", "resolution": "1K", "width": 864, "height": 1152},
+        {"aspect_ratio": "3:2", "resolution": "1K", "width": 1200, "height": 800},
+        {"aspect_ratio": "2:3", "resolution": "1K", "width": 800, "height": 1200},
+        {"aspect_ratio": "5:4", "resolution": "1K", "width": 1120, "height": 896},
+        {"aspect_ratio": "4:5", "resolution": "1K", "width": 896, "height": 1120},
+        {"aspect_ratio": "21:9", "resolution": "1K", "width": 1680, "height": 720},
+        {"aspect_ratio": "2:1", "resolution": "1K", "width": 1408, "height": 704},
+        {"aspect_ratio": "1:2", "resolution": "1K", "width": 704, "height": 1408}
+      ]
+    },
+    "hardware": {
+      "platform": "darwin",
+      "architectures": [
+        "arm64"
+      ],
+      "accelerator": "mlx",
+      "minimum_unified_memory_gb": 16,
+      "recommended_unified_memory_gb": 16,
+      "maximum_concurrency_per_worker": 1,
+      "unqualified_below_unified_memory_gb": 16
+    }
+  },
+  "evidence": {
+    "cache": {
+      "state": "cached",
+      "revision": "7fd24828501390b67a92c8b66d2fc5a707d0ba1a",
+      "complete_bytes": 4619726847,
+      "incomplete_bytes": 0,
+      "snapshot_file_count": 13,
+      "snapshot_linked_bytes": 4619726847,
+      "required_components": [
+        "tokenizer",
+        "text_encoder",
+        "transformer",
+        "vae"
+      ],
+      "broken_links": 0
+    },
+    "runtime": {
+      "application_version": "1.22.9",
+      "source_revision": "5dc08e3a460d2706d2f73359eb1a3571d776755b",
+      "python": "3.12.13",
+      "mflux": "0.17.5",
+      "mlx": "0.31.2",
+      "pillow": "12.2.0",
+      "numpy": "2.4.6",
+      "dependency_lock_match": true,
+      "adapter_path": "app/backend/generation.py::_generate_flux2_klein",
+      "runtime_class": "mflux.models.flux2.variants.txt2img.flux2_klein.Flux2Klein"
+    },
+    "license": {
+      "spdx": "Apache-2.0",
+      "source_model_id": "black-forest-labs/FLUX.2-klein-4B",
+      "source_revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+      "evidence_url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/blob/e7b7dc27f91deacad38e78976d1f2b499d76a294/LICENSE.md",
+      "evidence_sha256": "ca02bc51900ab07789d1b70283329e7137f5af98f5161c23a1c81fc38a4af1fe",
+      "verified_at": "2026-08-02T05:09:11Z",
+      "repackage_license_copy_present": false,
+      "note": "The immutable repackage names the upstream base model but does not include a local LICENSE file; the pinned upstream license was fetched and matched the stored SHA-256."
+    },
+    "technical_capabilities": {
+      "sibling_operations": [
+        "txt2img",
+        "img2img",
+        "edit"
+      ],
+      "approved_genstudio_operations": [
+        "image.text_to_image"
+      ],
+      "prompt_encoder_max_tokens": 512,
+      "runtime_default_steps": 4,
+      "runtime_default_guidance": 1.0,
+      "sibling_api_step_range": {
+        "minimum": 2,
+        "maximum": 100
+      },
+      "dimensions_must_be_divisible_by": 16,
+      "general_sibling_pixel_limit": 4000000,
+      "artifact_validation": "PNG signature, decodability, positive dimensions, and exact selected local canvas are checked before atomic publication."
+    },
+    "hardware_observation": {
+      "machine_id": "terranash-0205",
+      "chip": "Apple M4",
+      "unified_memory_gb": 16,
+      "memory_available_gb_before_1k": 4.86,
+      "memory_available_gb_after_1k": 2.85,
+      "peak_memory_measured": false
+    },
+    "generation_tests": [
+      {
+        "test_id": "text-to-image-16-9-1k-default",
+        "result": "passed",
+        "job_id": "8ed6e168df79",
+        "model_revision": "7fd24828501390b67a92c8b66d2fc5a707d0ba1a",
+        "runtime_revision": "imagestudio-mac@1.22.9;mflux@0.17.5;mlx@0.31.2",
+        "requested": {
+          "aspect_ratio": "16:9",
+          "resolution": "1K",
+          "width": 1280,
+          "height": 720,
+          "steps": 4,
+          "guidance": 1.0,
+          "seed": 20260802
+        },
+        "artifact": {
+          "width": 1280,
+          "height": 720,
+          "media_type": "image/png",
+          "bytes": 589260,
+          "sha256": "eba0fabef41f4d4d5021170e3dd2b3ba67b0964845e81e2e8c27b24f97d53778"
+        },
+        "runtime_seconds": 96.03381204605103
+      },
+      {
+        "test_id": "text-to-image-16-9-2k-default",
+        "result": "not_run_memory_safety",
+        "requested": {
+          "aspect_ratio": "16:9",
+          "resolution": "2K",
+          "width": 2560,
+          "height": 1440,
+          "steps": 4,
+          "guidance": 1.0
+        },
+        "reason": "The 16 GB audit host had only 2.85 GB available after the successful 1K run. A 3,686,400-pixel live test could risk allocator exhaustion or a supervised service restart, so 2K is not qualified by this audit and is excluded from the candidate output contract."
+      }
+    ]
+  },
+  "limitations": [
+    "The approved candidate is text-to-image only. Sibling img2img/edit support is deliberately not sellable through this audit.",
+    "Only the 1K tier is approved. The sibling's general 2K presets remain technical inventory and require qualification on a higher-memory worker.",
+    "The 4-bit checkpoint can soften faces and produce anatomy defects in complex multi-subject compositions; this audit verifies execution and contract correctness, not universal aesthetic quality.",
+    "The cached AITRADER repackage omits its own license copy, so license assurance depends on immutable upstream Apache-2.0 evidence."
+  ]
+}

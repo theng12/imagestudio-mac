@@ -525,6 +525,7 @@ def system_hardware() -> dict:
 @app.get("/api/catalog")
 def get_catalog() -> dict:
     families = {fid: catalog.serialize_family(f) for fid, f in catalog.FAMILIES.items()}
+    generation_capacity = gen_manager.availability()
     models = []
     for m in catalog.CATALOG:
         d = catalog.serialize_model(m)
@@ -555,6 +556,21 @@ def get_catalog() -> dict:
             )
             active = manager.active_for_repo(m.repo)
             d["active_download"] = active.serialize() if active else None
+        candidate = d.get("genstudio_candidate")
+        if isinstance(candidate, dict):
+            # Slots are a live, sanitized observation rather than part of the
+            # immutable contract hash. This worker has one process-wide MLX
+            # generation lock, so every audited local route shares one slot.
+            d["genstudio_candidate"] = {
+                **candidate,
+                "capacity": {
+                    "max_concurrency": 1,
+                    "available_slots": int(
+                        bool(d.get("execution_ready"))
+                        and not bool(generation_capacity.get("busy"))
+                    ),
+                },
+            }
         models.append(d)
     return {"families": families, "models": models}
 
