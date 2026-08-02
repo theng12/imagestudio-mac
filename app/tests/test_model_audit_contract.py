@@ -10,7 +10,7 @@ from backend.main import get_catalog
 
 RUNTIME_REPO = "AITRADER/FLUX2-klein-4B-mlx-4bit"
 RUNTIME_REVISION = "7fd24828501390b67a92c8b66d2fc5a707d0ba1a"
-CONTRACT_HASH = "sha256:694a09f638010ec22fcfbf38065f01a8fa9e72e26eac01df0e8b95854672c650"
+CONTRACT_HASH = "sha256:879290c9eb1f5395d2fdfe38421f0a571189113076d67f95c91adba48ce94355"
 
 
 def test_checked_in_candidate_is_valid_and_exactly_hash_bound():
@@ -23,6 +23,9 @@ def test_checked_in_candidate_is_valid_and_exactly_hash_bound():
     assert candidate["candidate_for_genstudio"] is True
     assert candidate["runtime_revision"] == RUNTIME_REVISION
     assert candidate["approved_operations"] == ["image.text_to_image"]
+    assert candidate["hardware"]["minimum_unified_memory_gb"] == 8
+    assert candidate["hardware"]["recommended_unified_memory_gb"] == 16
+    assert candidate["hardware"]["benchmarked_unified_memory_gb"] == 16
     assert candidate["contract_hash"] == CONTRACT_HASH
     assert model_audits.contract_hash(RUNTIME_REPO, candidate) == CONTRACT_HASH
     assert "approved_for_genstudio" not in candidate

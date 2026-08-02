@@ -8,6 +8,28 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.22.11] — 2026-08-02
+
+### Fixed — FLUX.2 Klein 4B 8 GB fleet eligibility
+
+- Corrected the active FLUX.2 Klein 4B MLX 4-bit catalog and GenStudio
+  candidate contract from a 16 GB scheduling minimum to the owner-confirmed
+  8 GB fleet minimum. The recommended tier remains 16 GB for stronger
+  operating headroom.
+- Preserved the original audit truth: the durable 1K benchmark was performed
+  on a 16 GB Apple M4. The contract now distinguishes that measured benchmark
+  tier from the operational minimum instead of incorrectly presenting the
+  benchmark host as a hard incompatibility below 16 GB.
+- Updated the integration guidance and regression coverage so Studio Hub can
+  admit eligible 8 GB workers after it observes the amended exact contract.
+
+### Verification
+
+- Recomputed the deterministic candidate contract hash and ran the focused
+  audit-contract, catalog-readiness, and release-metadata tests. No generation,
+  dependency, launcher, image-size, historical-job, or paid-provider behavior
+  changed. **Just run Update.**
+
 ## [1.22.10] — 2026-08-02
 
 ### Added — durable Group A FLUX.2 Klein qualification evidence

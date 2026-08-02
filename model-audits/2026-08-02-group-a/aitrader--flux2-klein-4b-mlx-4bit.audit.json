@@ -27,7 +27,7 @@
     "audit_id": "imagestudio-2026-08-02-flux2-klein-4b-mlx-4bit",
     "audit_status": "passed",
     "candidate_for_genstudio": true,
-    "contract_hash": "sha256:694a09f638010ec22fcfbf38065f01a8fa9e72e26eac01df0e8b95854672c650",
+    "contract_hash": "sha256:879290c9eb1f5395d2fdfe38421f0a571189113076d67f95c91adba48ce94355",
     "runtime_revision": "7fd24828501390b67a92c8b66d2fc5a707d0ba1a",
     "approved_operations": [
       "image.text_to_image"
@@ -134,10 +134,12 @@
         "arm64"
       ],
       "accelerator": "mlx",
-      "minimum_unified_memory_gb": 16,
+      "minimum_unified_memory_gb": 8,
       "recommended_unified_memory_gb": 16,
       "maximum_concurrency_per_worker": 1,
-      "unqualified_below_unified_memory_gb": 16
+      "unqualified_below_unified_memory_gb": 8,
+      "benchmarked_unified_memory_gb": 16,
+      "minimum_source": "owner-confirmed fleet operation"
     }
   },
   "evidence": {
