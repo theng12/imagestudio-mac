@@ -149,8 +149,10 @@ resolved seed, media, size, checksum, and runtime evidence.
 The protected model inventory reports the cached revision, qualification match,
 execution readiness, and pinned upstream Apache-2.0 evidence. Health reports
 only aggregate generation availability and queue state—never prompts, job IDs,
-or asset paths. The audited GenStudio minimum/recommended tier is currently
-16 GB unified memory; 8 GB remains unqualified.
+or asset paths. The GenStudio minimum tier is 8 GB unified memory, with 16 GB
+recommended for stronger operating headroom. The durable benchmark was
+recorded on 16 GB; the 8 GB floor is an owner-confirmed fleet operating limit
+rather than a rewritten claim about that benchmark host.
 
 `GET /api/catalog` includes a nullable `genstudio_candidate` object for exact
 checkpoints with a checked-in model audit. This is candidate evidence, not a

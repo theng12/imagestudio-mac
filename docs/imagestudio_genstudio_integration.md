@@ -61,7 +61,7 @@ checkpoint. That provenance/notice gap remains a launch blocker.
 | Image count | Exactly one final image per logical worker request. The WebUI's 1–8 batch control creates separate logical jobs | Exactly one item/request |
 | Input | One PNG, JPEG, or WebP; at most 20 MiB and 16,000,000 decoded pixels | No image input yet |
 | Output | One validated PNG (`image/png`) | PNG only |
-| Unified memory | 16 GB is the lowest tier with evidence in this audit and is the current minimum/recommended GenStudio tier | Must not schedule below 16 GB until an 8 GB qualification passes |
+| Unified memory | 8 GB operational minimum; 16 GB recommended and used by the durable benchmark | Schedule on 8 GB or larger; prefer 16 GB when more headroom is available |
 
 ## Final asset and failure contract
 
@@ -108,6 +108,7 @@ Remaining qualification blockers outside this worker-only change:
    not the worker's `qualified_revision_match`/`execution_ready` fields.
 4. The AITRADER repackage does not include an Apache license copy or exact
    upstream tensor provenance. Legal/provenance review must close that gap.
-5. An idle, non-customer 8 GB Apple Silicon qualification run is required before
-   lowering the advertised GenStudio memory floor below 16 GB.
+5. A future controlled 8 GB benchmark should add measured performance and
+   memory-headroom evidence; it is not a blocker to the owner-confirmed 8 GB
+   operating floor.
 6. Image-to-image remains a worker capability, not a GenStudio product operation.

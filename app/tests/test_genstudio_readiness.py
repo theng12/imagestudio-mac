@@ -17,7 +17,7 @@ def test_genstudio_model_inventory_records_revision_license_and_memory_floor():
     assert model is not None
     assert model.qualified_revision == RUNTIME_REVISION
     assert model.capabilities == ("txt2img", "img2img", "edit")
-    assert model.min_unified_memory_gb == 16
+    assert model.min_unified_memory_gb == 8
     assert model.license_spdx == "Apache-2.0"
     assert model.license_source_repo == "black-forest-labs/FLUX.2-klein-4B"
     assert len(model.license_source_revision or "") == 40
