@@ -152,6 +152,22 @@ only aggregate generation availability and queue state—never prompts, job IDs,
 or asset paths. The audited GenStudio minimum/recommended tier is currently
 16 GB unified memory; 8 GB remains unqualified.
 
+`GET /api/catalog` includes a nullable `genstudio_candidate` object for exact
+checkpoints with a checked-in model audit. This is candidate evidence, not a
+publication flag: it binds the checkpoint revision, approved operation subset,
+adapter/runtime, controls, limits, hardware floor, audit status, and contract
+hash. Studio Hub applies its separate owner-controlled exposure decision before
+advertising a candidate to GenStudio. The same nested object adds a live,
+sanitized capacity observation; Image Studio's process-wide MLX lock means one
+physical slot, reported as available only while the exact worker route is ready
+and idle.
+
+The Group A FLUX.2 Klein audit approves only `image.text_to_image` at the 1K
+tier. Image Studio's sibling-only img2img/edit capabilities and experimental 2K
+presets remain visible in the general catalog, but are not part of that
+sellable candidate contract. Durable evidence lives under
+`model-audits/<run-id>/`.
+
 See [the ImageStudio–GenStudio integration record](docs/imagestudio_genstudio_integration.md)
 for the capability matrix and cross-repository blockers. Studio Hub remains the
 only site-local scheduler; Image Studio only serializes work already assigned

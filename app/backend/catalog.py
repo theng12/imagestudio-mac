@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+from . import model_audits
 from . import sizes as _sizes
 
 
@@ -1506,6 +1507,9 @@ def serialize_model(m: ModelEntry) -> dict:
             if m.license_spdx else None
         ),
         "generation_profile": generation_profile(m),
+        # Audited candidates are sibling evidence, not publication authority.
+        # Studio Hub applies its separate owner-controlled exposure decision.
+        "genstudio_candidate": model_audits.candidate_for(m.repo),
     }
 
 
