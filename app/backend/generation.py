@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from . import catalog, cache, loras, memory_policy, sizes as _sizes
+from . import catalog, cache, loras, memory_policy, resource_telemetry, sizes as _sizes
 
 
 # ───────────── module-level locks / paths ─────────────
@@ -283,6 +283,8 @@ class GenerationJob:
     worker_id: Optional[str] = None
     machine_id: Optional[str] = None
     asset_evidence: dict = field(default_factory=dict)
+    resource_telemetry: Optional[dict] = None
+    resource_memory_failure: bool = False
     error: Optional[str] = None
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
@@ -335,6 +337,7 @@ class GenerationJob:
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "duration_seconds": duration,
+            "resource_telemetry": self.resource_telemetry,
             "final_asset": evidence if published else None,
             **evidence,
         }
@@ -505,6 +508,7 @@ class GenerationManager:
                 job.asset_evidence = {}
                 verified_memory_failure = local and _is_memory_failure(exc)
                 if verified_memory_failure:
+                    job.resource_memory_failure = True
                     self._record_memory_failure(job, exc)
                     if (
                         memory_retries < MEMORY_RETRY_LIMIT
@@ -898,6 +902,9 @@ class GenerationManager:
                 return
 
             memory_policy.mark_generation_started()
+            telemetry = resource_telemetry.JobResourceSampler(
+                lambda payload: setattr(job, "resource_telemetry", payload)
+            ).start()
             working_dir = OUTPUT_DIR / ".working"
             working_dir.mkdir(parents=True, exist_ok=True)
             staged_path = working_dir / f"{job.job_id}.png"
@@ -933,6 +940,12 @@ class GenerationManager:
                     traceback.print_exc()
             finally:
                 job.finished_at = time.time()
+                job.resource_telemetry = telemetry.finish(
+                    state=job.state,
+                    memory_failure=job.resource_memory_failure,
+                    restart_scheduled=self._restart_scheduled,
+                    model_retained=False,
+                )
                 self._cleanup_uploaded_inputs(job)
                 self._persist()
                 memory_policy.mark_generation_finished()
@@ -1123,6 +1136,13 @@ class GenerationManager:
                 return
 
             memory_policy.mark_generation_started()
+            telemetry = (
+                resource_telemetry.JobResourceSampler(
+                    lambda payload: setattr(job, "resource_telemetry", payload)
+                ).start()
+                if not _is_cloud
+                else None
+            )
             working_dir = OUTPUT_DIR / ".working"
             working_dir.mkdir(parents=True, exist_ok=True)
             staged_path = working_dir / f"{job.job_id}.png"
@@ -1158,6 +1178,13 @@ class GenerationManager:
                     traceback.print_exc()
             finally:
                 job.finished_at = time.time()
+                if telemetry is not None:
+                    job.resource_telemetry = telemetry.finish(
+                        state=job.state,
+                        memory_failure=job.resource_memory_failure,
+                        restart_scheduled=self._restart_scheduled,
+                        model_retained=False,
+                    )
                 self._cleanup_uploaded_inputs(job)
                 self._persist()
                 memory_policy.mark_generation_finished()

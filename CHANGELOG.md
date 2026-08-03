@@ -8,6 +8,22 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.22.12] — 2026-08-03
+
+### Added — measured local image resource evidence
+
+- Local text-to-image, image-to-image, and edit jobs now expose a compact
+  `imagestudio.resource-telemetry` v1 record with observed peak MLX memory,
+  worker RSS, minimum available RAM, macOS memory pressure, swap activity,
+  completion state, and recovered memory-failure evidence.
+- Cloud-provider jobs remain unchanged and do not publish local MLX evidence.
+- The payload deliberately mirrors Voice Studio qualification telemetry and
+  contains no prompt text, credentials, filesystem paths, or raw errors. This
+  enables real 8/16/24 GB model qualification instead of trusting catalog RAM
+  estimates.
+
+No dependency reinstall is required. Run **Update**, then restart Image Studio.
+
 ## [1.22.11] — 2026-08-02
 
 ### Fixed — FLUX.2 Klein 4B 8 GB fleet eligibility
