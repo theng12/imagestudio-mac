@@ -16,8 +16,11 @@ and MLX.
   Image-to-Image tab).
 - **Two local engines.** Most models run on **mflux/MLX** (Apple-native, fast).
   A second **diffusers** engine (PyTorch/MPS) runs models mflux has no class for
-  — **Stable Diffusion 3.5 Large** (gated) and **Sana 1600M** (ungated, the
-  easiest to try). Each model declares its `engine`; diffusers models behave like
+  — **Stable Diffusion 3.5 Large** (gated), **Sana 1600M** (ungated, the
+  easiest to try), and the **SDXL Lightning** pair (**Juggernaut XL** for
+  photoreal, **DreamShaper XL** for stylized/fantasy — both ungated, 4-7 steps,
+  and permissively licensed rather than non-commercial like the FLUX.1-dev
+  finetunes). Each model declares its `engine`; diffusers models behave like
   any other local model in the UI but need the `torch`/`diffusers` deps (run
   **Install Generation**). Note: **Ideogram 4 can't run on Apple MPS** — its
   weights are fp8/nf4 (fp8 is an unsupported MPS dtype; nf4 needs CUDA-only

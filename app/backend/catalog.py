@@ -236,6 +236,22 @@ FAMILIES: dict[str, Family] = {
             "pipeline loads + warms up on MPS); later ones reuse the loaded model."
         ),
     ),
+    "sdxl": Family(
+        id="sdxl",
+        label="SDXL Lightning",
+        summary=(
+            "Community SDXL checkpoints distilled to Lightning's 4-8 step "
+            "schedule. Runs via the diffusers engine on PyTorch/MPS. Unlike "
+            "the guidance-distilled FLUX/klein/turbo models, Lightning still "
+            "uses real classifier-free guidance — just at a low value."
+        ),
+        how_to_use=(
+            "Standard txt2img prompts. 4-7 steps, CFG 1.5-2.0 — higher guidance "
+            "washes out these models. Ungated, permissively licensed (OpenRAIL-"
+            "family) unlike the non-commercial FLUX.1-dev finetunes. Native "
+            "1024x1024; use SDXL-standard aspect ratios."
+        ),
+    ),
     "seedvr2": Family(
         id="seedvr2",
         label="SeedVR2 (upscaler)",
@@ -395,6 +411,16 @@ class ModelEntry:
     # Optional explicit diffusers pipeline class name (e.g. "StableDiffusion3Pipeline"
     # or a custom "Ideogram4Pipeline"). None → AutoPipelineForText2Image resolves it.
     diffusers_pipeline: Optional[str] = None
+    # Optional huggingface_hub `allow_patterns` globs restricting what gets
+    # downloaded from `repo`. None (default) downloads the whole repo. Needed
+    # when a repo bundles files the pipeline never loads alongside the ones it
+    # does — e.g. some SDXL repos publish a Civitai-style single-file
+    # .safetensors checkpoint next to the diffusers-format subdirs
+    # (unet/, vae/, text_encoder*/, tokenizer*/, model_index.json) that
+    # from_pretrained() actually reads, roughly doubling the download for no
+    # benefit. `size_gb` above should reflect the filtered total, not the
+    # full repo, when this is set.
+    download_allow_patterns: Optional[tuple[str, ...]] = None
     # ── Output-dimension capability (v1.15.0) ───────────────────────────────
     # Whether this model honors the requested width/height (i.e. the aspect-ratio
     # presets do anything). False for fixed-output endpoints — Cloudflare's FLUX
@@ -983,6 +1009,80 @@ CATALOG: tuple[ModelEntry, ...] = (
         ),
     ),
 
+    # SDXL Lightning finetunes (diffusers-format community repos, not the raw
+    # Civitai single-file checkpoints). Both repos publish their diffusers-
+    # format subdirs (unet/, vae/, text_encoder*/, tokenizer*/) ALONGSIDE a
+    # Civitai-style single-file .safetensors checkpoint the app's generic
+    # AutoPipelineForText2Image.from_pretrained() loader never reads — that
+    # extra file is excluded via download_allow_patterns so users don't pay
+    # for bytes the engine can't use. DreamShaper additionally ships redundant
+    # `.fp16.*` variant weights alongside the default-precision ones (the
+    # loader never requests a variant, so it always reads the default files);
+    # those are excluded too. If _load_diffusers_pipeline() is ever changed to
+    # pass variant="fp16", this entry's allow_patterns must be updated to match.
+    ModelEntry(
+        repo="RunDiffusion/Juggernaut-XL-Lightning",
+        label="Juggernaut XL Lightning",
+        family="sdxl",
+        size_gb=13.9,
+        gated=False,
+        min_unified_memory_gb=16,
+        recommended_hardware="Apple Silicon 16 GB+. SDXL-sized UNet + dual CLIP text encoders on PyTorch/MPS.",
+        capabilities=("txt2img",),
+        engine="diffusers",
+        download_allow_patterns=(
+            "model_index.json",
+            "scheduler/*",
+            "text_encoder/*",
+            "text_encoder_2/*",
+            "tokenizer/*",
+            "tokenizer_2/*",
+            "unet/*",
+            "vae/*",
+        ),
+        best_for="RunDiffusion's photoreal Juggernaut XL, distilled to SDXL Lightning's 5-7 step schedule — same aesthetic as full Juggernaut at roughly 5x the speed. Ungated, permissively licensed (OpenRAIL-M). Use low CFG (1.5-2.0) — high guidance washes out Lightning models.",
+        use_cases=(
+            ("good",  "Fast photoreal portraits/scenes — 5-7 steps instead of 30-40"),
+            ("good",  "Real-time iteration on prompts before committing to a slower model"),
+            ("good",  "Ungated + OpenRAIL-M license — broader use than the non-commercial FLUX.1-dev finetunes"),
+            ("weak",  "Ships PyTorch .bin (pickle) weights, not safetensors — RunDiffusion's official upload, but note the format if that matters to you"),
+            ("avoid", "Maximum per-image fidelity — use full Juggernaut XL v9 (30-40 steps) or a FLUX model for that"),
+        ),
+    ),
+    ModelEntry(
+        repo="Lykon/dreamshaper-xl-lightning",
+        label="DreamShaper XL Lightning",
+        family="sdxl",
+        size_gb=13.9,
+        gated=False,
+        min_unified_memory_gb=16,
+        recommended_hardware="Apple Silicon 16 GB+. SDXL-sized UNet + dual CLIP text encoders on PyTorch/MPS.",
+        capabilities=("txt2img",),
+        engine="diffusers",
+        download_allow_patterns=(
+            "model_index.json",
+            "scheduler/scheduler_config.json",
+            "text_encoder/config.json",
+            "text_encoder/model.safetensors",
+            "text_encoder_2/config.json",
+            "text_encoder_2/model.safetensors",
+            "tokenizer/*",
+            "tokenizer_2/*",
+            "unet/config.json",
+            "unet/diffusion_pytorch_model.safetensors",
+            "vae/config.json",
+            "vae/diffusion_pytorch_model.safetensors",
+        ),
+        best_for="Lykon's all-around SDXL finetune (fantasy art, renders, stylized/anime-leaning output), distilled to SDXL Lightning's 4-step schedule. Ungated, permissively licensed (OpenRAIL++). Use low CFG (~2.0) — high guidance washes out Lightning models.",
+        use_cases=(
+            ("good",  "Fast stylized/fantasy art and illustration — 4 steps"),
+            ("good",  "Broader stylistic range than a photoreal-only model like Juggernaut"),
+            ("good",  "Ungated + OpenRAIL++ license — broader use than the non-commercial FLUX.1-dev finetunes"),
+            ("weak",  "4-step Lightning ceiling — less fine detail than a full-step SDXL or FLUX model"),
+            ("avoid", "Photoreal portraits — Juggernaut XL Lightning is the stronger pick for that"),
+        ),
+    ),
+
     ModelEntry(
         repo="stabilityai/stable-diffusion-3.5-large",
         label="Stable Diffusion 3.5 Large",
@@ -1319,9 +1419,14 @@ def generation_profile(m: ModelEntry) -> dict:
     repo = m.repo.lower()
     distilled = (
         m.family in {"flux2-klein", "flux1-schnell"}
-        or "turbo" in repo
-        or "lightning" in repo
+        or (m.family != "sdxl" and ("turbo" in repo or "lightning" in repo))
     )
+    # SDXL Lightning is step-distilled (fewer steps), not guidance-distilled —
+    # unlike FLUX schnell/klein or z-image turbo, it still uses real
+    # classifier-free guidance (just a low value) and negative prompts are a
+    # normal, commonly-used control for it. So it's excluded from `distilled`
+    # above even though "lightning" is in the repo id, and gets its own
+    # defaults below instead of guidance=0 / hidden controls.
     is_upscaler = m.family == "seedvr2"
 
     defaults = {"steps": 20, "guidance": 4.0, "image_strength": 0.6}
@@ -1343,6 +1448,8 @@ def generation_profile(m: ModelEntry) -> dict:
         defaults.update(steps=35, guidance=4.0)
     elif m.family == "auraflow":
         defaults.update(steps=40, guidance=3.5)
+    elif m.family == "sdxl":
+        defaults.update(steps=6, guidance=2.0)
 
     if m.is_cloud:
         supports_negative = m.cloud_provider in {"huggingface", "nebius"}

@@ -8,6 +8,98 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.23.0] — 2026-08-05
+
+### Added — SDXL Lightning family (Juggernaut XL, DreamShaper XL)
+
+Two fast, ungated, permissively-licensed SDXL Lightning checkpoints on the
+existing diffusers engine (PyTorch/MPS):
+
+- **Juggernaut XL Lightning** (`RunDiffusion/Juggernaut-XL-Lightning`) —
+  RunDiffusion's photoreal Juggernaut distilled to a 5-7 step schedule.
+  CreativeML OpenRAIL-M.
+- **DreamShaper XL Lightning** (`Lykon/dreamshaper-xl-lightning`) — Lykon's
+  all-around fantasy/illustration finetune, 4-step schedule. OpenRAIL++.
+
+Both are **ungated** (no HF token or license-acceptance step) and, unlike the
+FLUX.1-dev finetunes already in the catalog, are **not** restricted to
+non-commercial use. Each is 13.9 GB and wants 16 GB unified memory.
+
+`AutoPipelineForText2Image` resolves `StableDiffusionXLPipeline` from each
+repo's `model_index.json`, so **no new inference code and no new Python
+dependencies** were required — `torch`/`diffusers` were already installed for
+the SD3.5 / Sana / PixArt / Lumina2 / AuraFlow families.
+
+### Added — `download_allow_patterns` catalog field
+
+Both repos publish their diffusers-format subdirs *alongside* a Civitai-style
+single-file `.safetensors` checkpoint that `from_pretrained()` never reads.
+Downloading a repo wholesale therefore fetched **7-21 GB of weights the engine
+cannot use**:
+
+| Repo | Whole repo | Actually needed | Wasted |
+| --- | --- | --- | --- |
+| Juggernaut XL Lightning | 21.0 GB | 13.9 GB | 7.1 GB |
+| DreamShaper XL Lightning | 34.7 GB | 13.9 GB | 20.8 GB |
+
+`ModelEntry.download_allow_patterns` now passes `allow_patterns` through to
+`snapshot_download`, and the download manager's byte-total estimate applies the
+same filter so the progress bar and ETA reflect the real transfer. Entries that
+leave the field unset download the whole repo exactly as before.
+
+DreamShaper's exclusion also drops its redundant `.fp16.*` variant weights —
+the loader never requests `variant="fp16"`, so it always reads the
+default-precision files. A code comment records that if
+`_load_diffusers_pipeline()` ever starts passing a variant, that entry's
+patterns must change with it.
+
+### Fixed — Lightning models no longer misclassified as guidance-distilled
+
+`generation_profile()` treated any repo with `lightning` in its id as
+distilled, which hid the guidance and negative-prompt controls. SDXL Lightning
+is **step**-distilled, not **guidance**-distilled — it still uses real
+classifier-free guidance (just a low CFG) and negative prompts are a normal
+control for it. The `sdxl` family is now excluded from that heuristic and gets
+its own defaults (6 steps, CFG 2.0) per the model cards' 4-7 step / CFG 1.5-2.0
+guidance. FLUX schnell/klein and z-image turbo are unaffected.
+
+### Verification
+
+- `audit_truth.py` — no drift; `sdxl` correctly excluded from the mflux audit.
+- `pytest app/tests` — 76 passed. (Two `test_model_audit_contract.py` failures
+  are pre-existing on clean `main`, from missing audit fixture files, and are
+  unrelated to this change — confirmed by re-running against a stashed tree.)
+- Download filters checked against HuggingFace's own `filter_repo_objects`:
+  the kept set is exactly `model_index.json` + `scheduler/` + `text_encoder*/`
+  + `tokenizer*/` + `unet/` + `vae/`, with the standalone checkpoints and
+  `.fp16.*` duplicates excluded.
+- **SDXL pipeline path executed for real** on this machine: a tiny SDXL repo
+  loaded through the same `AutoPipelineForText2Image.from_pretrained()` call
+  the engine uses, resolved to `StableDiffusionXLPipeline`, moved to MPS in
+  bfloat16, accepted `negative_prompt` + `guidance_scale=2.0` + 6 steps, and
+  produced an image. This is the code path this release introduces.
+- **Not yet done:** a full-weight generate with the real 13.9 GB checkpoints.
+  The HF transfer is bandwidth/connection-bound here (one attempt died with
+  `RemoteProtocolError` mid-UNet and had to resume), so the first real-weight
+  generation will be the first confirmation that these specific files load.
+  The engine's existing error handling surfaces a load failure as a normal job
+  error, so a bad entry cannot affect other models.
+
+### Known follow-up — fp16 variants would halve these downloads
+
+Both repos also publish `.fp16.*` component weights (DreamShaper's UNet is
+10.3 GB at default precision vs 5.1 GB fp16). The engine loads in bfloat16 on
+MPS anyway, so it downloads full-precision weights only to cast them down.
+`_load_diffusers_pipeline()` does not pass `variant=`, so requesting fp16 would
+need a loader change plus a per-entry opt-in — deliberately out of scope here,
+but it would roughly halve the disk and transfer cost for variant-publishing
+repos.
+
+**PATCH-vs-MINOR note:** this is MINOR because it adds a model family and a
+catalog capability, but it needs **no dependency reinstall** — just run
+**Update**. "Install Generation" is only required if you have never installed
+the diffusers engine deps.
+
 ## [1.22.12] — 2026-08-03
 
 ### Added — measured local image resource evidence
