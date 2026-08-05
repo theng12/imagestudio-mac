@@ -8,6 +8,66 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.25.0] — 2026-08-05
+
+### Added — three diffusers-engine models (ERNIE-Image Turbo, Onyx Z-Image Turbo 3-bit/4-bit)
+
+All three load through the **existing** diffusers engine — no new dependency was
+added. The decisive check was not architecture but repo *packaging*: diffusers
+0.38.0 already ships `ZImagePipeline` and `ErnieImagePipeline`, so a repo in
+diffusers layout is a drop-in even when its weights are MLX-quantized.
+
+- **`Xiejiehang/ERNIE-Image-Turbo-MLX-Q4`** (new `ernie-image` family, ~8.2 GB,
+  Apache-2.0, ungated). 4-bit conversion of `baidu/ERNIE-Image-Turbo`.
+  `ErnieImagePipeline` is **not** registered in diffusers'
+  `AUTO_TEXT2IMAGE_PIPELINES_MAPPING`, so `diffusers_pipeline` is set
+  explicitly — `AutoPipelineForText2Image` would fail to resolve it otherwise.
+- **`wabibito/Onyx-Z-Image-Turbo-3bit`** (~5.25 GB) and **`-4bit`** (~6.47 GB),
+  Apache-2.0. Quantizations — not finetunes — of `Tongyi-MAI/Z-Image-Turbo`.
+  These matter because the three existing `andrevp/Z-Image-Turbo-MLX-*` quants
+  are `runtime_compatible=False` (externally-packed MLX with no mflux
+  quantization metadata). The Onyx repos are diffusers-format, so Z-Image
+  quants are expected to actually load for the first time. The 3-bit tier also
+  fills a gap: the andrevp set jumps 2-bit straight to 4-bit.
+
+`generation_profile()` gained an explicit `ernie-image` branch (5 steps) so it
+cannot fall through to the generic 20-step / 4.0-guidance default — the same
+class of mistake that produced washed-out Segmind Vega output in 1.24.0.
+
+### Memory floors on these three are PROVISIONAL, not measured
+
+Every floor here is a starting guess, stated as such in each entry's
+`recommended_hardware` and in a user-visible `weak` use case:
+
+- ERNIE 24 GB — taken from the model card's own M3/24 GB benchmark (14.7 GB
+  peak), deliberately anchored to the card's machine rather than inferred
+  downward from the peak figure.
+- Both Onyx rows 16 GB — matched to the existing andrevp 4-bit row.
+
+None has been run on 8/16/24 GB hardware by this app. Per the rule established
+in 1.24.0, a floor is only real once measured; these are labelled rather than
+quietly presented as verified.
+
+ERNIE is also disclosed as slow: its card measures ~44 s/step (231 s for a
+5-step 1024x1024). For comparison, DreamShaper XL Lightning was raised to a
+24 GB floor at 29.2 s/step for "completing by thrashing, not computing".
+
+### Fixed — diffusers-engine rows must not advertise img2img
+
+The three new entries were initially written with
+`capabilities=("txt2img", "img2img")`, copied from the mflux Z-Image rows.
+`_generate_diffusers()` reads neither `image_path` nor `image_strength` — it is
+txt2img-only, which is why all eight pre-existing diffusers rows declare
+`("txt2img",)`. Advertising img2img would have surfaced a UI affordance that
+silently discards the input image and returns a plain txt2img result. Corrected
+to `("txt2img",)` before shipping.
+
+### Licence policy — record and warn, never block
+
+Licence status is documented per model and surfaced in `use_cases`, but is not
+a catalog admission test. All three models added here are Apache-2.0 with
+commercial use permitted.
+
 ## [1.24.1] — 2026-08-05
 
 ### Fixed — the download filter shipped without its integrated path ever running
