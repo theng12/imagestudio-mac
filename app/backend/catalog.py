@@ -586,28 +586,13 @@ CATALOG: tuple[ModelEntry, ...] = (
     # of this app, re-add them and route to a dedicated fine-tuning UI.
 
     # ──────────── FLUX.2 dev ────────────
-    ModelEntry(
-        repo="black-forest-labs/FLUX.2-dev",
-        label="FLUX.2 dev",
-        family="flux2-dev",
-        size_gb=177.6,
-        gated=True,
-        min_unified_memory_gb=64,
-        recommended_hardware=(
-            "M3 Max 64 GB / M3 Ultra / M4 Max. Long download (multi-tens of GB)."
-        ),
-        capabilities=("txt2img", "img2img"),
-        best_for="Highest quality FLUX.2 generation. Needs serious hardware (64 GB+) and patience (multi-tens of GB download). The choice for final renders when quality > speed.",
-        use_cases=(
-            ("good",  "Reference quality — the open-source FLUX line's peak"),
-            ("good",  "Final commercial renders, print-resolution outputs"),
-            ("good",  "The hardest prompts (complex scenes, accurate text rendering)"),
-            ("weak",  "Slow per-generation — minutes, not seconds"),
-            ("weak",  "Long initial download (60+ GB)"),
-            ("avoid", "Any Mac with less than 64 GB — won't fit, will swap or OOM"),
-        ),
-    ),
-
+    # NOTE: this family has no catalog rows. black-forest-labs/FLUX.2-dev was
+    # removed in v1.26.0 — it is gated (licence acceptance on the Hugging Face
+    # website, so no unattended fleet download) and carries a 64 GB floor with
+    # a 177.6 GB download, putting it outside every 8/16/24 GB machine. The
+    # family and its mflux wiring are kept so an ungated, smaller FLUX.2
+    # conversion can be added later without rewiring; the UI hides empty
+    # families.
     # ──────────── FLUX.1 schnell ────────────
     ModelEntry(
         repo="black-forest-labs/FLUX.1-schnell",
@@ -633,52 +618,19 @@ CATALOG: tuple[ModelEntry, ...] = (
     # appears (e.g. under mflux-community/*), add it here.
 
     # ──────────── FLUX.1 dev ────────────
-    ModelEntry(
-        repo="black-forest-labs/FLUX.1-dev",
-        label="FLUX.1 dev (full)",
-        family="flux1-dev",
-        size_gb=57.9,
-        gated=True,
-        min_unified_memory_gb=24,
-        recommended_hardware="M2 Pro 32 GB+ for the full checkpoint. License-gated.",
-        capabilities=("txt2img", "img2img"),
-        best_for="The original high-quality FLUX.1 — needs 20–30 steps but produces excellent results. Gated, non-commercial license. Pick over schnell when fidelity > speed.",
-        use_cases=(
-            ("good",  "Highest-quality FLUX.1 output — full-precision reference"),
-            ("good",  "Slow, thoughtful renders with 20-30 inference steps"),
-            ("weak",  "License is non-commercial — personal projects only"),
-            ("avoid", "16 GB Macs — use the MLX 4-bit variant"),
-            ("avoid", "Quick iteration — schnell is built for that"),
-        ),
-    ),
-    # NOTE: madroid/flux.1-dev-mflux-4bit removed in v1.2.5 — same MLX-format
-    # incompatibility as the madroid schnell repo. The full
-    # black-forest-labs/FLUX.1-dev entry above still works via on-the-fly
-    # quantization (mflux loads + quantizes during weight loading).
+    # NOTE: this family has no catalog rows. madroid/flux.1-dev-mflux-4bit was
+    # removed in v1.2.5 (same MLX-format incompatibility as the madroid schnell
+    # repo), and the full black-forest-labs/FLUX.1-dev was removed in v1.26.0
+    # because it is gated — it cannot be fetched without accepting a licence on
+    # the Hugging Face website, so it could never be part of an automated fleet
+    # download. The family entry and its mflux wiring are kept deliberately so
+    # an ungated dev conversion can be added later without rewiring; the UI
+    # hides families with no models.
 
     # ──────────── FLUX.1 Krea dev (photorealism finetune) — new in v1.5.0 ──────
     # Rides the same mflux Flux1 class as schnell/dev. _generate_flux1 selects
     # ModelConfig.krea_dev() for this family. Pure txt2img/img2img, no new deps
     # beyond the existing FLUX.1 stack — a near drop-in catalog add.
-    ModelEntry(
-        repo="black-forest-labs/FLUX.1-Krea-dev",
-        label="FLUX.1 Krea dev",
-        family="flux1-krea",
-        size_gb=57.9,
-        gated=True,
-        min_unified_memory_gb=24,
-        recommended_hardware="M2 Pro 32 GB+ for the full checkpoint. License-gated (HF token + license acceptance).",
-        capabilities=("txt2img", "img2img"),
-        best_for="BFL × Krea's photorealism-tuned FLUX.1 — noticeably less 'AI-looking' than stock FLUX.1 dev (more natural skin, lighting, texture). Pick this over FLUX.1 dev when you want photographic realism rather than the default glossy FLUX look.",
-        use_cases=(
-            ("good",  "Photorealistic portraits + people — more natural skin/lighting than stock FLUX.1 dev"),
-            ("good",  "Editorial / lifestyle / documentary-style photography"),
-            ("good",  "Anything where stock FLUX output looks too glossy or synthetic"),
-            ("weak",  "License is non-commercial — personal projects only"),
-            ("avoid", "16 GB Macs — 24 GB checkpoint; use an MLX-quant klein for tight memory"),
-            ("avoid", "Quick iteration — 20-30 steps; use FLUX.1 schnell or a klein quant for speed"),
-        ),
-    ),
     # Pre-quantized MLX 4-bit Krea, by filipstrand (the mflux author) — the
     # "maintained 4-bit repo" the removed-madroid notes above were waiting for.
     # Same flux1-krea family → _generate_flux1 with ModelConfig.krea_dev(). Its
@@ -707,23 +659,6 @@ CATALOG: tuple[ModelEntry, ...] = (
     # ──────────── FLUX.1 Kontext (dedicated instruction-edit model) ────────────
     # Wired via _generate_kontext (mflux's Flux1Kontext). Requires an input
     # image — txt2img-only flows will error with a clear "needs reference" message.
-    ModelEntry(
-        repo="black-forest-labs/FLUX.1-Kontext-dev",
-        label="FLUX.1 Kontext dev",
-        family="flux1-kontext",
-        size_gb=57.9,
-        gated=True,
-        min_unified_memory_gb=24,
-        recommended_hardware="M2 Pro 32 GB+ for the full checkpoint. Gated, needs HF token + license acceptance.",
-        capabilities=("edit",),
-        best_for="Black Forest Labs' dedicated instruction-edit model. Best-in-class for surgical photo edits (subject preserved, only the requested change applied). Use the Image Edit tab with a reference image attached.",
-        use_cases=(
-            ("good",  "Surgical photo edits — change just one element, preserve everything else"),
-            ("good",  "'Add sunglasses', 'change shirt color', 'remove background object' style prompts"),
-            ("weak",  "License is non-commercial — personal projects only"),
-            ("avoid", "Pure txt2img generation — Kontext is edit-specialized and requires a reference image (use the Image Edit tab)"),
-        ),
-    ),
     # Pre-quantized MLX 4-bit Kontext (akx) — same flux1-kontext family →
     # _generate_kontext (mflux's Flux1Kontext, model_path=repo). T5 encoder is in
     # the current U32 quant format (mflux 0.9.6), so it loads on current mflux.
@@ -829,90 +764,16 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("avoid", "Pure txt2img — use FIBO Lite/full for that, not Edit"),
         ),
     ),
-    ModelEntry(
-        repo="andrevp/Z-Image-Turbo-MLX",
-        label="Z-Image Turbo — MLX fp16",
-        family="z-image",
-        size_gb=20.54,
-        gated=False,
-        min_unified_memory_gb=32,
-        recommended_hardware="M2 Max / M3 Max with 32 GB+. Full float16 MLX conversion; 9 inference steps and guidance 0.",
-        capabilities=("txt2img", "img2img"),
-        best_for="Full-precision MLX conversion of Z-Image Turbo. Use when you want the publisher's highest-fidelity conversion and have enough unified memory.",
-        use_cases=(
-            ("good",  "Highest fidelity in andrevp's Z-Image Turbo MLX set"),
-            ("good",  "Photorealism, bilingual English/Chinese text, and instruction adherence"),
-            ("good",  "Apache-2.0 license and ungated download"),
-            ("weak",  "20.54 GB download and a practical 32 GB memory floor"),
-        ),
-    ),
-    ModelEntry(
-        repo="andrevp/Z-Image-Turbo-MLX-8bit",
-        label="Z-Image Turbo — MLX 8-bit",
-        family="z-image",
-        size_gb=11.37,
-        gated=False,
-        quantization="mlx-8bit",
-        min_unified_memory_gb=16,
-        recommended_hardware="16 GB+ unified memory. Downloadable, but this external packed-MLX format is not yet loadable by mflux.",
-        capabilities=("txt2img", "img2img"),
-        runtime_compatible=False,
-        runtime_note="This repository uses external packed MLX weights without mflux quantization metadata. Loader support is required before generation.",
-        best_for="Higher-fidelity quantized Z-Image Turbo conversion with a smaller footprint than fp16. Catalogued now for future loader support.",
-        use_cases=(
-            ("good",  "11.37 GB, roughly half the fp16 download"),
-            ("good",  "8-bit quality is the safest quantized option in this set"),
-            ("weak",  "Not currently loadable by Image Studio's mflux worker"),
-        ),
-    ),
-    ModelEntry(
-        repo="andrevp/Z-Image-Turbo-MLX-4bit",
-        label="Z-Image Turbo — MLX 4-bit",
-        family="z-image",
-        size_gb=6.48,
-        gated=False,
-        quantization="mlx-4bit",
-        min_unified_memory_gb=16,
-        recommended_hardware="16 GB+ unified memory. Downloadable, but this external packed-MLX format is not yet loadable by mflux.",
-        capabilities=("txt2img", "img2img"),
-        runtime_compatible=False,
-        runtime_note="This repository uses external packed MLX weights without mflux quantization metadata. Loader support is required before generation.",
-        best_for="Balanced-size Z-Image Turbo MLX conversion. Catalogued now for future loader support.",
-        use_cases=(
-            ("good",  "6.48 GB download; the practical size/quality midpoint"),
-            ("good",  "VAE remains float16 to preserve image decoding quality"),
-            ("weak",  "Not currently loadable by Image Studio's mflux worker"),
-        ),
-    ),
-    ModelEntry(
-        repo="andrevp/Z-Image-Turbo-MLX-2bit",
-        label="Z-Image Turbo — MLX 2-bit",
-        family="z-image",
-        size_gb=4.04,
-        gated=False,
-        quantization="mlx-2bit",
-        min_unified_memory_gb=8,
-        recommended_hardware="8 GB minimum. Smallest conversion, with noticeable quality loss; external packed-MLX format is not yet loadable by mflux.",
-        capabilities=("txt2img", "img2img"),
-        runtime_compatible=False,
-        runtime_note="This repository uses external packed MLX weights without mflux quantization metadata. Loader support is required before generation.",
-        best_for="Smallest Z-Image Turbo MLX download. Catalogued for experimentation once loader support lands; expect visible 2-bit quality degradation.",
-        use_cases=(
-            ("good",  "Smallest option at 4.04 GB"),
-            ("good",  "Potential path for memory-constrained Apple Silicon"),
-            ("weak",  "Publisher warns of noticeable 2-bit quality degradation"),
-            ("weak",  "Not currently loadable by Image Studio's mflux worker"),
-        ),
-    ),
     # Onyx Z-Image Turbo quants (wabibito) — a genuine 3-bit/4-bit MLX
     # quantization of Tongyi-MAI/Z-Image-Turbo (the card is explicit that this
-    # is a quantization, not a finetune). Unlike the andrevp MLX conversions
-    # above, these repos declare library_name: diffusers with pipeline
+    # is a quantization, not a finetune). The andrevp MLX conversions this
+    # family used to carry were removed in v1.26.0 as unloadable; these repos
+    # instead declare library_name: diffusers with pipeline
     # ZImagePipeline, which the installed diffusers 0.38.0 has natively
     # (registered in AUTO_TEXT2IMAGE_PIPELINES_MAPPING under "z-image") — so
     # these are wired through engine="diffusers", NOT mflux, and are expected
-    # to actually load (unlike the runtime_compatible=False andrevp rows,
-    # which are externally-packed MLX with no mflux quantization metadata).
+    # to actually load, where the removed andrevp rows were externally-packed
+    # MLX with no mflux quantization metadata and could not be loaded at all.
     ModelEntry(
         repo="wabibito/Onyx-Z-Image-Turbo-3bit",
         label="Onyx Z-Image Turbo — 3-bit (diffusers)",
@@ -926,18 +787,18 @@ CATALOG: tuple[ModelEntry, ...] = (
         # of the underlying weights, but it's loaded through diffusers/PyTorch
         # on MPS, not mflux, so it shouldn't claim the MLX-runtime badge.
         # NOT YET MEASURED — this is a provisional floor, not a benchmarked one.
-        # Picked in line with the existing andrevp 4-bit z-image row (16 GB) as
+        # Picked in line with the former andrevp 4-bit z-image row (16 GB) as
         # a starting point; see the "weak" use_case below.
         min_unified_memory_gb=16,
         recommended_hardware="Provisional: 16 GB unified memory, unmeasured on this app. Only transformer + text-encoder Linear layers are quantized; norms/embeddings/convs and the whole VAE stay fp16.",
         capabilities=("txt2img",),
         engine="diffusers",
         diffusers_pipeline="ZImagePipeline",
-        best_for="A 3-bit MLX quantization of Z-Image Turbo (Tongyi-MAI/Z-Image-Turbo) in diffusers format — a genuine quantization of the same weights, not a separate finetune. Fills a size gap the andrevp MLX set doesn't cover: those jump from 2-bit straight to 4-bit/8-bit/fp16. Apache-2.0, ungated, commercial use OK.",
+        best_for="A 3-bit MLX quantization of Z-Image Turbo (Tongyi-MAI/Z-Image-Turbo) in diffusers format — a genuine quantization of the same weights, not a separate finetune. The smallest Z-Image option in the catalog, and the cheapest way to try the family on a constrained machine. Apache-2.0, ungated, commercial use OK.",
         use_cases=(
-            ("good",  "Smaller than the 4-bit Onyx/andrevp rows (5.25 GB) with the same diffusers loading path"),
+            ("good",  "The smallest Z-Image row at 5.25 GB, on the same diffusers loading path as the 4-bit"),
             ("good",  "Apache-2.0 license — commercial use OK"),
-            ("good",  "Diffusers-format ZImagePipeline — expected to actually load, unlike the runtime_compatible=False andrevp MLX quants"),
+            ("good",  "Diffusers-format ZImagePipeline — loads through the engine the app already runs"),
             ("weak",  "16 GB memory floor is PROVISIONAL — not yet measured on 8/16/24 GB hardware by this app; treat it as a starting guess, not a verified number"),
             ("weak",  "3-bit is the most aggressive quantization in the z-image set — expect more visible quality loss than 4-bit/8-bit"),
         ),
@@ -950,16 +811,16 @@ CATALOG: tuple[ModelEntry, ...] = (
         gated=False,
         # `quantization` intentionally left unset — see the same note on the
         # 3-bit sibling above; this is diffusers/PyTorch on MPS, not mflux.
-        # NOT YET MEASURED — provisional, matching the existing andrevp 4-bit
+        # NOT YET MEASURED — provisional, matching the former andrevp 4-bit
         # z-image row's floor. See the "weak" use_case below for the caveat.
         min_unified_memory_gb=16,
         recommended_hardware="Provisional: 16 GB unified memory, unmeasured on this app. Only transformer + text-encoder Linear layers are quantized; norms/embeddings/convs and the whole VAE stay fp16.",
         capabilities=("txt2img",),
         engine="diffusers",
         diffusers_pipeline="ZImagePipeline",
-        best_for="A 4-bit MLX quantization of Z-Image Turbo (Tongyi-MAI/Z-Image-Turbo) in diffusers format. Near-identical download size to the existing andrevp/Z-Image-Turbo-MLX-4bit row (6.48 GB), but where that row is marked not runtime-compatible (externally-packed MLX with no mflux quantization metadata), this one is diffusers-format and is expected to actually load. Apache-2.0, ungated, commercial use OK.",
+        best_for="A 4-bit MLX quantization of Z-Image Turbo (Tongyi-MAI/Z-Image-Turbo) in diffusers format. The higher-quality of the two Onyx quants — pick this over the 3-bit unless you are tight on memory or disk. Apache-2.0, ungated, commercial use OK.",
         use_cases=(
-            ("good",  "Diffusers-format ZImagePipeline — expected to actually load, unlike the same-size andrevp 4-bit row (runtime_compatible=False)"),
+            ("good",  "Diffusers-format ZImagePipeline — loads through the engine the app already runs"),
             ("good",  "Apache-2.0 license — commercial use OK"),
             ("good",  "Only Linear layers in transformer + text encoder are quantized; VAE stays fp16 for decode quality"),
             ("weak",  "16 GB memory floor is PROVISIONAL — not yet measured on 8/16/24 GB hardware by this app; treat it as a starting guess, not a verified number"),
@@ -1225,26 +1086,6 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("weak",  "Distilled UNet gives up fine detail vs a full-size SDXL finetune"),
             ("avoid", "8 GB Macs — the small weights are misleading; measured peak is 12.5 GB"),
             ("avoid", "Stylized explainer / pixel-art work on Apple Silicon — FLUX.2 klein 4B is stronger there AND runs on 8 GB"),
-        ),
-    ),
-
-    ModelEntry(
-        repo="stabilityai/stable-diffusion-3.5-large",
-        label="Stable Diffusion 3.5 Large",
-        family="sd35",
-        size_gb=71.6,
-        gated=True,
-        min_unified_memory_gb=24,
-        recommended_hardware="High-memory Apple Silicon (M2 Max / M3 Max / M3 Ultra). Runs on PyTorch/MPS — slower than the MLX models.",
-        capabilities=("txt2img",),
-        engine="diffusers",
-        best_for="Stability AI's SD3.5 Large via the diffusers engine — a strong, well-supported general txt2img model, and the proof-of-concept for running non-FLUX models locally. Gated (HF token + license). Runs on MPS, so slower than the FLUX-MLX models.",
-        use_cases=(
-            ("good",  "General-purpose txt2img with the broad SD3.5 ecosystem"),
-            ("good",  "Opens the diffusers model zoo this engine unlocks (Ideogram 4, Sana, …)"),
-            ("weak",  "PyTorch/MPS is slower than mflux/MLX — expect longer generations"),
-            ("weak",  "Gated + large download — needs HF token + license acceptance"),
-            ("avoid", "Fast iteration on a small Mac — use an MLX klein quant for that"),
         ),
     ),
 
