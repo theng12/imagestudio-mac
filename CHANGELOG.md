@@ -8,6 +8,170 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.24.0] — 2026-08-05
+
+### Added — Segmind Vega (compact SDXL, Apache-2.0)
+
+`segmind/Segmind-Vega` — a size-distilled SDXL with a 2.98 GB UNet (vs SDXL's
+10.27 GB) and the lightest SDXL download here at 6.6 GB. **Apache-2.0**, the
+most permissive license in this catalog. Note its text encoders are NOT shrunk
+— byte-identical to full SDXL's — so they dominate its footprint.
+
+### Fixed — SDXL Lightning settings were being applied to a non-Lightning model
+
+The `sdxl` family assumed Lightning tuning (6 steps, CFG 2.0). Vega is *size*-
+distilled, not *step*-distilled, and Segmind's card asks for **~25 steps at
+CFG ~9** plus a negative prompt — nearly the opposite. `generation_profile()`
+now branches on the model, and the family label changed from "SDXL Lightning"
+to "SDXL" since it holds two different tunings. Applying the wrong one produces
+washed-out output and reads as a bad model.
+
+### Changed — memory floors are now MEASURED, and two models were requalified
+
+Previous floors were inferred from download size and parameter count. That is
+unreliable for SDXL on MPS, where **activations, not weights, set the floor**.
+All three were re-measured on a **16 GB Apple M4** at **1280x720** (the app's
+own 16:9 preset), using the model's own catalog defaults:
+
+| Model | Weights | Peak (driver) | s/step | Swap growth | Floor |
+| --- | --- | --- | --- | --- | --- |
+| Segmind Vega | 3.29 GB | 12.54 GB | **4.5** | +4.00 GB | 16 GB |
+| DreamShaper XL Lightning | 6.94 GB | 15.78 GB | **29.2** | +5.58 GB | 16 → **24 GB** |
+| Juggernaut XL Lightning | 6.94 GB | — | — | — | 16 → **24 GB** |
+
+- **DreamShaper XL Lightning raised 16 → 24 GB.** At 29.2 s/step it is
+  6.5x slower per step than Vega doing the same resolution on the same machine,
+  while growing swap by 5.58 GB. It completes by thrashing, not computing.
+- **Juggernaut XL Lightning raised 16 → 24 GB** on the same basis — it is
+  architecturally identical to DreamShaper with the same 13.88 GB of weights.
+  This one is inferred from its sibling, not independently measured; the entry
+  says so.
+- **Segmind Vega stays at 16 GB.** It does touch swap, but at 4.5 s/step it
+  remains responsive, and it is the only SDXL here that does.
+- An earlier **8 GB** floor for Vega was **wrong** and is corrected. It came
+  from sizing the model by its small UNet; live weights are 3.29 GB but the
+  allocator reached 12.54 GB.
+
+**Measurement caveats, stated rather than buried:** `driver_allocated_memory()`
+includes the MPS allocator's cache, which grows opportunistically toward free
+RAM, so it overstates true need; live-tensor peaks sampled at step boundaries
+(3.30 / 6.94 GB) understate it, since intra-step attention peaks are missed.
+The behavioural signals — s/step and swap growth — are what the requalification
+actually rests on. The host also had ~6-7 GB of pre-existing swap from earlier
+test runs, so absolute swap figures are inflated; the deltas are the signal.
+
+### Investigated and rejected — attention/VAE slicing as a memory fix
+
+`enable_attention_slicing` + `enable_vae_slicing`/`enable_vae_tiling` are the
+standard levers for cutting diffusers peak memory. On MPS + bfloat16 they
+**produced pure black images** (mean 0.0, std 0.0) while barely moving peak
+(13.27 → 12.47 GB at 1024x1024). They are deliberately NOT enabled in the
+engine. Had peak memory been checked without checking pixels, this would have
+shipped as a silent black-frame bug.
+
+### Verification
+
+- Style matrix run on the two available models across three prompts
+  (stick-figure explainer, MS Paint fantasy, pixel art) at 1280x720; all six
+  images non-black and correct. Outputs and per-model JSON written to
+  `~/Downloads/genstudio-testing/`.
+- `audit_truth.py` — no drift. `pytest app/tests` — 76 passed (the two
+  `test_model_audit_contract` failures remain pre-existing on clean `main`).
+
+## [1.23.0] — 2026-08-05
+
+### Added — SDXL Lightning family (Juggernaut XL, DreamShaper XL)
+
+Two fast, ungated, permissively-licensed SDXL Lightning checkpoints on the
+existing diffusers engine (PyTorch/MPS):
+
+- **Juggernaut XL Lightning** (`RunDiffusion/Juggernaut-XL-Lightning`) —
+  RunDiffusion's photoreal Juggernaut distilled to a 5-7 step schedule.
+  CreativeML OpenRAIL-M.
+- **DreamShaper XL Lightning** (`Lykon/dreamshaper-xl-lightning`) — Lykon's
+  all-around fantasy/illustration finetune, 4-step schedule. OpenRAIL++.
+
+Both are **ungated** (no HF token or license-acceptance step) and, unlike the
+FLUX.1-dev finetunes already in the catalog, are **not** restricted to
+non-commercial use. Each is 13.9 GB and wants 16 GB unified memory.
+
+`AutoPipelineForText2Image` resolves `StableDiffusionXLPipeline` from each
+repo's `model_index.json`, so **no new inference code and no new Python
+dependencies** were required — `torch`/`diffusers` were already installed for
+the SD3.5 / Sana / PixArt / Lumina2 / AuraFlow families.
+
+### Added — `download_allow_patterns` catalog field
+
+Both repos publish their diffusers-format subdirs *alongside* a Civitai-style
+single-file `.safetensors` checkpoint that `from_pretrained()` never reads.
+Downloading a repo wholesale therefore fetched **7-21 GB of weights the engine
+cannot use**:
+
+| Repo | Whole repo | Actually needed | Wasted |
+| --- | --- | --- | --- |
+| Juggernaut XL Lightning | 21.0 GB | 13.9 GB | 7.1 GB |
+| DreamShaper XL Lightning | 34.7 GB | 13.9 GB | 20.8 GB |
+
+`ModelEntry.download_allow_patterns` now passes `allow_patterns` through to
+`snapshot_download`, and the download manager's byte-total estimate applies the
+same filter so the progress bar and ETA reflect the real transfer. Entries that
+leave the field unset download the whole repo exactly as before.
+
+DreamShaper's exclusion also drops its redundant `.fp16.*` variant weights —
+the loader never requests `variant="fp16"`, so it always reads the
+default-precision files. A code comment records that if
+`_load_diffusers_pipeline()` ever starts passing a variant, that entry's
+patterns must change with it.
+
+### Fixed — Lightning models no longer misclassified as guidance-distilled
+
+`generation_profile()` treated any repo with `lightning` in its id as
+distilled, which hid the guidance and negative-prompt controls. SDXL Lightning
+is **step**-distilled, not **guidance**-distilled — it still uses real
+classifier-free guidance (just a low CFG) and negative prompts are a normal
+control for it. The `sdxl` family is now excluded from that heuristic and gets
+its own defaults (6 steps, CFG 2.0) per the model cards' 4-7 step / CFG 1.5-2.0
+guidance. FLUX schnell/klein and z-image turbo are unaffected.
+
+### Verification
+
+- `audit_truth.py` — no drift; `sdxl` correctly excluded from the mflux audit.
+- `pytest app/tests` — 76 passed. (Two `test_model_audit_contract.py` failures
+  are pre-existing on clean `main`, from missing audit fixture files, and are
+  unrelated to this change — confirmed by re-running against a stashed tree.)
+- Download filters checked against HuggingFace's own `filter_repo_objects`:
+  the kept set is exactly `model_index.json` + `scheduler/` + `text_encoder*/`
+  + `tokenizer*/` + `unet/` + `vae/`, with the standalone checkpoints and
+  `.fp16.*` duplicates excluded.
+- **Full end-to-end run completed on a 16 GB Apple M-series Mac** with the real
+  DreamShaper XL Lightning weights:
+  - Filtered download fetched **exactly 18 files / 13.88 GB** — the standalone
+    `DreamShaperXL_Lightning*.safetensors` checkpoints and every `.fp16.*`
+    duplicate were excluded, and `cache.cache_state()` reports `cached` with
+    zero `.incomplete` bytes.
+  - `AutoPipelineForText2Image.from_pretrained()` resolved
+    `StableDiffusionXLPipeline` and loaded in **24.9 s** on MPS in bfloat16.
+  - 1024x1024, 6 steps, CFG 2.0, with a negative prompt: **77.6 s**, producing
+    a correct photorealistic image (not noise or a black frame).
+  - The transfer itself is bandwidth-bound and needed a resume after one
+    `RemoteProtocolError` mid-UNet; `snapshot_download` resumed cleanly from
+    the `.incomplete` blob, so the filtering change is resume-safe.
+
+### Known follow-up — fp16 variants would halve these downloads
+
+Both repos also publish `.fp16.*` component weights (DreamShaper's UNet is
+10.3 GB at default precision vs 5.1 GB fp16). The engine loads in bfloat16 on
+MPS anyway, so it downloads full-precision weights only to cast them down.
+`_load_diffusers_pipeline()` does not pass `variant=`, so requesting fp16 would
+need a loader change plus a per-entry opt-in — deliberately out of scope here,
+but it would roughly halve the disk and transfer cost for variant-publishing
+repos.
+
+**PATCH-vs-MINOR note:** this is MINOR because it adds a model family and a
+catalog capability, but it needs **no dependency reinstall** — just run
+**Update**. "Install Generation" is only required if you have never installed
+the diffusers engine deps.
+
 ## [1.22.12] — 2026-08-03
 
 ### Added — measured local image resource evidence

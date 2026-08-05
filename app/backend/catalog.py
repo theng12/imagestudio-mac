@@ -236,6 +236,27 @@ FAMILIES: dict[str, Family] = {
             "pipeline loads + warms up on MPS); later ones reuse the loaded model."
         ),
     ),
+    "sdxl": Family(
+        id="sdxl",
+        label="SDXL",
+        summary=(
+            "Community Stable Diffusion XL checkpoints on the diffusers engine "
+            "(PyTorch/MPS). Two shapes live here: **Lightning** finetunes, "
+            "step-distilled to 4-8 steps at low CFG, and **size-distilled** "
+            "variants like Segmind Vega with a much smaller UNet that run in "
+            "far less memory at normal step counts. All are ungated and "
+            "permissively licensed, unlike the non-commercial FLUX.1-dev line."
+        ),
+        how_to_use=(
+            "Standard txt2img prompts, native 1024x1024. Settings differ by "
+            "model and the UI applies the right ones automatically: Lightning "
+            "models want 4-7 steps at CFG 1.5-2.0 (higher guidance washes them "
+            "out), while Segmind Vega wants ~25 steps at CFG ~9 and benefits "
+            "from a negative prompt. Note these are step- or size-distilled, "
+            "NOT guidance-distilled — unlike FLUX schnell/klein, they all use "
+            "real classifier-free guidance, so the CFG control stays live."
+        ),
+    ),
     "seedvr2": Family(
         id="seedvr2",
         label="SeedVR2 (upscaler)",
@@ -395,6 +416,16 @@ class ModelEntry:
     # Optional explicit diffusers pipeline class name (e.g. "StableDiffusion3Pipeline"
     # or a custom "Ideogram4Pipeline"). None → AutoPipelineForText2Image resolves it.
     diffusers_pipeline: Optional[str] = None
+    # Optional huggingface_hub `allow_patterns` globs restricting what gets
+    # downloaded from `repo`. None (default) downloads the whole repo. Needed
+    # when a repo bundles files the pipeline never loads alongside the ones it
+    # does — e.g. some SDXL repos publish a Civitai-style single-file
+    # .safetensors checkpoint next to the diffusers-format subdirs
+    # (unet/, vae/, text_encoder*/, tokenizer*/, model_index.json) that
+    # from_pretrained() actually reads, roughly doubling the download for no
+    # benefit. `size_gb` above should reflect the filtered total, not the
+    # full repo, when this is set.
+    download_allow_patterns: Optional[tuple[str, ...]] = None
     # ── Output-dimension capability (v1.15.0) ───────────────────────────────
     # Whether this model honors the requested width/height (i.e. the aspect-ratio
     # presets do anything). False for fixed-output endpoints — Cloudflare's FLUX
@@ -983,6 +1014,140 @@ CATALOG: tuple[ModelEntry, ...] = (
         ),
     ),
 
+    # SDXL Lightning finetunes (diffusers-format community repos, not the raw
+    # Civitai single-file checkpoints). Both repos publish their diffusers-
+    # format subdirs (unet/, vae/, text_encoder*/, tokenizer*/) ALONGSIDE a
+    # Civitai-style single-file .safetensors checkpoint the app's generic
+    # AutoPipelineForText2Image.from_pretrained() loader never reads — that
+    # extra file is excluded via download_allow_patterns so users don't pay
+    # for bytes the engine can't use. DreamShaper additionally ships redundant
+    # `.fp16.*` variant weights alongside the default-precision ones (the
+    # loader never requests a variant, so it always reads the default files);
+    # those are excluded too. If _load_diffusers_pipeline() is ever changed to
+    # pass variant="fp16", this entry's allow_patterns must be updated to match.
+    ModelEntry(
+        repo="RunDiffusion/Juggernaut-XL-Lightning",
+        label="Juggernaut XL Lightning",
+        family="sdxl",
+        size_gb=13.9,
+        gated=False,
+        # QUALIFIED BY MEASUREMENT on a 16 GB Apple M4 (2026-08-05), 1280x720.
+        # Its sibling DreamShaper XL Lightning — architecturally identical, same
+        # 13.88 GB of weights — ran at 29.2 s/step and grew swap by 5.58 GB,
+        # i.e. it thrashed rather than computed. 16 GB is not a usable floor for
+        # a full-size SDXL UNet + dual CLIP encoders on MPS.
+        min_unified_memory_gb=24,
+        recommended_hardware="Apple Silicon 24 GB+. Measured on a 16 GB M4 the sibling model swapped ~5.6 GB and ran ~29 s/step at 1280x720 — usable only with real headroom.",
+        capabilities=("txt2img",),
+        engine="diffusers",
+        download_allow_patterns=(
+            "model_index.json",
+            "scheduler/*",
+            "text_encoder/*",
+            "text_encoder_2/*",
+            "tokenizer/*",
+            "tokenizer_2/*",
+            "unet/*",
+            "vae/*",
+        ),
+        best_for="RunDiffusion's photoreal Juggernaut XL, distilled to SDXL Lightning's 5-7 step schedule — same aesthetic as full Juggernaut at roughly 5x the speed. Ungated, permissively licensed (OpenRAIL-M). Use low CFG (1.5-2.0) — high guidance washes out Lightning models.",
+        use_cases=(
+            ("good",  "Fast photoreal portraits/scenes — 5-7 steps instead of 30-40"),
+            ("good",  "Real-time iteration on prompts before committing to a slower model"),
+            ("good",  "Ungated + OpenRAIL-M license — broader use than the non-commercial FLUX.1-dev finetunes"),
+            ("weak",  "Ships PyTorch .bin (pickle) weights, not safetensors — RunDiffusion's official upload, but note the format if that matters to you"),
+            ("avoid", "Maximum per-image fidelity — use full Juggernaut XL v9 (30-40 steps) or a FLUX model for that"),
+        ),
+    ),
+    ModelEntry(
+        repo="Lykon/dreamshaper-xl-lightning",
+        label="DreamShaper XL Lightning",
+        family="sdxl",
+        size_gb=13.9,
+        gated=False,
+        # QUALIFIED BY MEASUREMENT on a 16 GB Apple M4 (2026-08-05), 1280x720,
+        # 6 steps: 29.2 s/step, swap grew 5.58 GB, free RAM fell to 18%. It
+        # completes, but by thrashing — 6.5x slower per step than Segmind Vega
+        # doing the same resolution on the same machine. Raised 16 -> 24.
+        min_unified_memory_gb=24,
+        recommended_hardware="Apple Silicon 24 GB+. Measured on a 16 GB M4: ~29 s/step at 1280x720 with ~5.6 GB of swap growth — it runs, but thrashes.",
+        capabilities=("txt2img",),
+        engine="diffusers",
+        download_allow_patterns=(
+            "model_index.json",
+            "scheduler/scheduler_config.json",
+            "text_encoder/config.json",
+            "text_encoder/model.safetensors",
+            "text_encoder_2/config.json",
+            "text_encoder_2/model.safetensors",
+            "tokenizer/*",
+            "tokenizer_2/*",
+            "unet/config.json",
+            "unet/diffusion_pytorch_model.safetensors",
+            "vae/config.json",
+            "vae/diffusion_pytorch_model.safetensors",
+        ),
+        best_for="Lykon's all-around SDXL finetune (fantasy art, renders, stylized/anime-leaning output), distilled to SDXL Lightning's 4-step schedule. Ungated, permissively licensed (OpenRAIL++). Use low CFG (~2.0) — high guidance washes out Lightning models.",
+        use_cases=(
+            ("good",  "Fast stylized/fantasy art and illustration — 4 steps"),
+            ("good",  "Broader stylistic range than a photoreal-only model like Juggernaut"),
+            ("good",  "Ungated + OpenRAIL++ license — broader use than the non-commercial FLUX.1-dev finetunes"),
+            ("weak",  "4-step Lightning ceiling — less fine detail than a full-step SDXL or FLUX model"),
+            ("avoid", "Photoreal portraits — Juggernaut XL Lightning is the stronger pick for that"),
+        ),
+    ),
+
+    # Segmind Vega — SIZE-distilled SDXL (v1.24.0). Not a Lightning model: it
+    # keeps a normal ~25-step schedule at high CFG, but its UNet is 2.98 GB vs
+    # SDXL's 10.27 GB (~0.74B params), which is what brings it into 8 GB reach.
+    # Note the text encoders are NOT shrunk — they're byte-identical in size to
+    # full SDXL's, so they dominate the footprint here (3.27 of 6.59 GB).
+    ModelEntry(
+        repo="segmind/Segmind-Vega",
+        label="Segmind Vega — compact SDXL",
+        family="sdxl",
+        size_gb=6.6,
+        gated=False,
+        # QUALIFIED BY MEASUREMENT on a 16 GB Apple M4 (2026-08-05), 1280x720,
+        # 25 steps: 4.5 s/step, swap grew 4.0 GB, free RAM floor 13%. It does
+        # touch swap on 16 GB, but stays responsive — 6.5x faster per step than
+        # the full-size SDXL Lightning pair on the same machine, which is why
+        # this stays at 16 while they were raised to 24.
+        #
+        # An earlier 8 GB guess (from the small 2.98 GB UNet) was WRONG: live
+        # weights are 3.29 GB but the allocator reached 12.54 GB. Attention/VAE
+        # slicing is NOT a workaround — on MPS + bfloat16 it produced pure black
+        # images (std=0.0) while barely reducing peak. See CHANGELOG 1.24.0.
+        min_unified_memory_gb=16,
+        recommended_hardware="Apple Silicon 16 GB+. Measured on a 16 GB M4: 4.5 s/step at 1280x720 with ~4 GB swap growth — the only SDXL here that stays responsive on 16 GB.",
+        capabilities=("txt2img",),
+        engine="diffusers",
+        download_allow_patterns=(
+            "model_index.json",
+            "scheduler/scheduler_config.json",
+            "text_encoder/config.json",
+            "text_encoder/model.safetensors",
+            "text_encoder_2/config.json",
+            "text_encoder_2/model.safetensors",
+            "tokenizer/*",
+            "tokenizer_2/*",
+            "unet/config.json",
+            "unet/diffusion_pytorch_model.safetensors",
+            "vae/config.json",
+            "vae/diffusion_pytorch_model.safetensors",
+        ),
+        best_for="Segmind's size-distilled SDXL — a ~70% smaller UNet (2.98 GB vs SDXL's 10.27 GB) and the lightest SDXL download here at 6.6 GB. Apache-2.0, the most permissive license in this catalog — genuinely unrestricted commercially, unlike the OpenRAIL Lightning pair. Unlike those, it wants a NORMAL schedule: ~25 steps at CFG ~9, plus a negative prompt (Segmind's own recommendation). Note it still needs 16 GB despite the small weights.",
+        use_cases=(
+            ("good",  "Apache-2.0 — genuinely unrestricted, including commercial use"),
+            ("good",  "Lightest SDXL download here (6.6 GB vs 13.9 GB) and lowest peak memory of the three"),
+            ("good",  "General 1024px / 1280x720 txt2img with the broad SDXL prompt vocabulary"),
+            ("weak",  "~25 steps at CFG ~9 — roughly 90 s at 1280x720, vs ~6 steps for the Lightning pair"),
+            ("weak",  "Distilled UNet gives up fine detail vs a full-size SDXL finetune"),
+            ("avoid", "8 GB Macs — the small weights are misleading; measured peak is 12.5 GB"),
+            ("avoid", "Stylized explainer / pixel-art work on Apple Silicon — FLUX.2 klein 4B is stronger there AND runs on 8 GB"),
+        ),
+    ),
+
     ModelEntry(
         repo="stabilityai/stable-diffusion-3.5-large",
         label="Stable Diffusion 3.5 Large",
@@ -1319,9 +1484,14 @@ def generation_profile(m: ModelEntry) -> dict:
     repo = m.repo.lower()
     distilled = (
         m.family in {"flux2-klein", "flux1-schnell"}
-        or "turbo" in repo
-        or "lightning" in repo
+        or (m.family != "sdxl" and ("turbo" in repo or "lightning" in repo))
     )
+    # SDXL Lightning is step-distilled (fewer steps), not guidance-distilled —
+    # unlike FLUX schnell/klein or z-image turbo, it still uses real
+    # classifier-free guidance (just a low value) and negative prompts are a
+    # normal, commonly-used control for it. So it's excluded from `distilled`
+    # above even though "lightning" is in the repo id, and gets its own
+    # defaults below instead of guidance=0 / hidden controls.
     is_upscaler = m.family == "seedvr2"
 
     defaults = {"steps": 20, "guidance": 4.0, "image_strength": 0.6}
@@ -1343,6 +1513,17 @@ def generation_profile(m: ModelEntry) -> dict:
         defaults.update(steps=35, guidance=4.0)
     elif m.family == "auraflow":
         defaults.update(steps=40, guidance=3.5)
+    elif m.family == "sdxl":
+        # Two very different tunings share this family. Lightning finetunes are
+        # step-distilled: few steps, low CFG (high guidance washes them out).
+        # Size-distilled models like Segmind Vega keep a normal schedule and
+        # actually want HIGH guidance — Segmind's card explicitly asks for
+        # CFG ~9 plus a negative prompt. Getting this backwards produces washed
+        # -out slop on one and undercooked noise on the other.
+        if "lightning" in repo:
+            defaults.update(steps=6, guidance=2.0)
+        else:
+            defaults.update(steps=25, guidance=9.0)
 
     if m.is_cloud:
         supports_negative = m.cloud_provider in {"huggingface", "nebius"}

@@ -25,12 +25,21 @@ import time
 import traceback
 import uuid
 from dataclasses import dataclass, field
+from fnmatch import fnmatch
 from typing import Optional
 
 from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub.utils import HfHubHTTPError
 
-from . import cache, settings
+from . import cache, catalog, settings
+
+
+def _allow_patterns_for(repo: str) -> Optional[tuple[str, ...]]:
+    """Look up the catalog's download filter for `repo`, if any. Missing from
+    the catalog (shouldn't happen for a real download job) just means no
+    filtering — download everything, same as before this existed."""
+    model = catalog.get_model(repo)
+    return model.download_allow_patterns if model else None
 
 
 @dataclass
@@ -205,8 +214,11 @@ class DownloadManager:
             return 0
         except Exception:
             return 0
+        patterns = _allow_patterns_for(repo)
         total = 0
         for sibling in info.siblings or []:
+            if patterns and not any(fnmatch(sibling.rfilename, p) for p in patterns):
+                continue
             size = getattr(sibling, "size", None) or 0
             try:
                 total += int(size)
@@ -236,6 +248,7 @@ class DownloadManager:
             snapshot_download(
                 repo_id=job.repo,
                 token=effective_token,
+                allow_patterns=_allow_patterns_for(job.repo),
             )
             if job.cancel_event.is_set():
                 job.state = "cancelled"

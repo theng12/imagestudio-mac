@@ -155,6 +155,7 @@ _ENGINE_REQUIREMENTS = {
     "pixart-sigma":  ["torch", "diffusers", "Pillow", "numpy"],
     "lumina2":       ["torch", "diffusers", "Pillow", "numpy"],
     "auraflow":      ["torch", "diffusers", "Pillow", "numpy"],
+    "sdxl":          ["torch", "diffusers", "Pillow", "numpy"],
     # roadmap engines — declared so the UI shows what they'll need
     "flux1-kontext": ["mflux", "mlx", "Pillow", "numpy"],
     "qwen-edit":     ["transformers", "mlx", "Pillow", "numpy"],
@@ -194,7 +195,7 @@ _WIRED_FAMILIES = {
 # don't go through mflux family dispatch (routed by `engine` in _dispatch_txt2img),
 # so they're tracked separately and excluded from the mflux truth audit. Listed
 # here so diagnostics() can mark them "wired" once torch/diffusers are installed.
-_DIFFUSERS_FAMILIES = {"sd35", "sana", "pixart-sigma", "lumina2", "auraflow"}
+_DIFFUSERS_FAMILIES = {"sd35", "sana", "pixart-sigma", "lumina2", "auraflow", "sdxl"}
 
 
 def _probe_package(display_name: str, import_name: Optional[str] = None) -> dict:
