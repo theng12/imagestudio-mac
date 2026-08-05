@@ -8,6 +8,76 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.24.0] — 2026-08-05
+
+### Added — Segmind Vega (compact SDXL, Apache-2.0)
+
+`segmind/Segmind-Vega` — a size-distilled SDXL with a 2.98 GB UNet (vs SDXL's
+10.27 GB) and the lightest SDXL download here at 6.6 GB. **Apache-2.0**, the
+most permissive license in this catalog. Note its text encoders are NOT shrunk
+— byte-identical to full SDXL's — so they dominate its footprint.
+
+### Fixed — SDXL Lightning settings were being applied to a non-Lightning model
+
+The `sdxl` family assumed Lightning tuning (6 steps, CFG 2.0). Vega is *size*-
+distilled, not *step*-distilled, and Segmind's card asks for **~25 steps at
+CFG ~9** plus a negative prompt — nearly the opposite. `generation_profile()`
+now branches on the model, and the family label changed from "SDXL Lightning"
+to "SDXL" since it holds two different tunings. Applying the wrong one produces
+washed-out output and reads as a bad model.
+
+### Changed — memory floors are now MEASURED, and two models were requalified
+
+Previous floors were inferred from download size and parameter count. That is
+unreliable for SDXL on MPS, where **activations, not weights, set the floor**.
+All three were re-measured on a **16 GB Apple M4** at **1280x720** (the app's
+own 16:9 preset), using the model's own catalog defaults:
+
+| Model | Weights | Peak (driver) | s/step | Swap growth | Floor |
+| --- | --- | --- | --- | --- | --- |
+| Segmind Vega | 3.29 GB | 12.54 GB | **4.5** | +4.00 GB | 16 GB |
+| DreamShaper XL Lightning | 6.94 GB | 15.78 GB | **29.2** | +5.58 GB | 16 → **24 GB** |
+| Juggernaut XL Lightning | 6.94 GB | — | — | — | 16 → **24 GB** |
+
+- **DreamShaper XL Lightning raised 16 → 24 GB.** At 29.2 s/step it is
+  6.5x slower per step than Vega doing the same resolution on the same machine,
+  while growing swap by 5.58 GB. It completes by thrashing, not computing.
+- **Juggernaut XL Lightning raised 16 → 24 GB** on the same basis — it is
+  architecturally identical to DreamShaper with the same 13.88 GB of weights.
+  This one is inferred from its sibling, not independently measured; the entry
+  says so.
+- **Segmind Vega stays at 16 GB.** It does touch swap, but at 4.5 s/step it
+  remains responsive, and it is the only SDXL here that does.
+- An earlier **8 GB** floor for Vega was **wrong** and is corrected. It came
+  from sizing the model by its small UNet; live weights are 3.29 GB but the
+  allocator reached 12.54 GB.
+
+**Measurement caveats, stated rather than buried:** `driver_allocated_memory()`
+includes the MPS allocator's cache, which grows opportunistically toward free
+RAM, so it overstates true need; live-tensor peaks sampled at step boundaries
+(3.30 / 6.94 GB) understate it, since intra-step attention peaks are missed.
+The behavioural signals — s/step and swap growth — are what the requalification
+actually rests on. The host also had ~6-7 GB of pre-existing swap from earlier
+test runs, so absolute swap figures are inflated; the deltas are the signal.
+
+### Investigated and rejected — attention/VAE slicing as a memory fix
+
+`enable_attention_slicing` + `enable_vae_slicing`/`enable_vae_tiling` are the
+standard levers for cutting diffusers peak memory. On MPS + bfloat16 they
+**produced pure black images** (mean 0.0, std 0.0) while barely moving peak
+(13.27 → 12.47 GB at 1024x1024). They are deliberately NOT enabled in the
+engine. Had peak memory been checked without checking pixels, this would have
+shipped as a silent black-frame bug.
+
+### Verification
+
+- Style matrix run on the two available models across three prompts
+  (stick-figure explainer, MS Paint fantasy, pixel art) at 1280x720; all six
+  images non-black and correct. Outputs and per-model JSON written to
+  `~/Downloads/genstudio-testing/`.
+- `audit_truth.py` — no drift. `pytest app/tests` — 76 passed (the two
+  `test_model_audit_contract` failures remain pre-existing on clean `main`).
+
 ## [1.23.0] — 2026-08-05
 
 ### Added — SDXL Lightning family (Juggernaut XL, DreamShaper XL)
