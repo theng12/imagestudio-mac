@@ -8,6 +8,13 @@ from backend import catalog, model_audits
 from backend.main import get_catalog
 
 
+# Anchored to the repository root rather than the process working directory.
+# A bare relative path only resolved when pytest ran from the repo root, but
+# the suite has to run from `app/` for `from backend import ...` to import at
+# all — so these two tests could never actually open the record.
+ROOT = Path(__file__).resolve().parents[2]
+AUDIT_RECORD = ROOT / "model-audits/2026-08-02-group-a/aitrader--flux2-klein-4b-mlx-4bit.audit.json"
+
 RUNTIME_REPO = "AITRADER/FLUX2-klein-4B-mlx-4bit"
 RUNTIME_REVISION = "7fd24828501390b67a92c8b66d2fc5a707d0ba1a"
 CONTRACT_HASH = "sha256:879290c9eb1f5395d2fdfe38421f0a571189113076d67f95c91adba48ce94355"
@@ -122,7 +129,7 @@ def test_busy_worker_reports_no_candidate_slot_without_changing_the_contract_has
 
 
 def test_invalid_contract_hash_fails_closed(tmp_path, monkeypatch):
-    source = Path("model-audits/2026-08-02-group-a/aitrader--flux2-klein-4b-mlx-4bit.audit.json")
+    source = AUDIT_RECORD
     record = json.loads(source.read_text())
     record["genstudio_candidate"]["controls"]["guidance"]["fixed"] = 2.0
     changed = tmp_path / "changed.audit.json"
@@ -136,7 +143,7 @@ def test_invalid_contract_hash_fails_closed(tmp_path, monkeypatch):
 
 
 def test_audit_record_preserves_the_real_generation_and_2k_safety_decision():
-    path = Path("model-audits/2026-08-02-group-a/aitrader--flux2-klein-4b-mlx-4bit.audit.json")
+    path = AUDIT_RECORD
     record = json.loads(path.read_text())
     tests = {item["test_id"]: item for item in record["evidence"]["generation_tests"]}
 

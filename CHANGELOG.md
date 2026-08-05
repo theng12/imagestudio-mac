@@ -8,6 +8,51 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.24.1] — 2026-08-05
+
+### Fixed — the download filter shipped without its integrated path ever running
+
+`download_allow_patterns` landed in 1.24.0 wired through `DownloadManager`, but
+every filtered download performed to that point passed the patterns to
+`snapshot_download` by hand. The wiring itself — catalog entry →
+`_allow_patterns_for()` → the actual download — had **never once executed**, so
+a release claimed as verified contained an untested path.
+
+- Added `app/tests/test_download_allow_patterns.py`, covering both call sites
+  with the network mocked out. No bytes are fetched and no model is loaded.
+- `_run()` is now proven to hand each of the three filtered models
+  (Juggernaut XL Lightning, DreamShaper XL Lightning, Segmind Vega) the exact
+  tuple its catalog entry declares, asserted against the catalog rather than a
+  copy, so the test cannot drift.
+- `_resolve_total_bytes()` is proven to size a job using the same filter, so the
+  progress total matches what the download actually intends to fetch.
+- The 39 models with no filter, and any repo absent from the catalog, are proven
+  to still pass `allow_patterns=None` — download everything, exactly as before.
+- Added an invariant test that no model may declare an **empty** filter. `()` is
+  falsy, so `_resolve_total_bytes` would read it as "no filter" and size the
+  whole repo, while `snapshot_download` reads it as "match nothing" and would
+  fetch zero files while reporting success. The two call sites would disagree
+  silently. The field must be `None` or non-empty.
+
+The tests were mutation-checked: breaking `_allow_patterns_for()` to return
+`None` fails four of them across both call sites.
+
+### Fixed — two audit-contract tests could never open their record
+
+`test_model_audit_contract.py` resolved the audit record through a bare relative
+`Path("model-audits/…")`, which only works when pytest runs from the repository
+root. The suite has to run from `app/` for `from backend import …` to import at
+all, so both tests failed with `FileNotFoundError` under the only working
+invocation — the contract-hash fail-closed check and the 2K memory-safety
+assertion were dead coverage rather than passing coverage.
+
+- The path is now anchored with `Path(__file__).resolve().parents[2]`, matching
+  the style already used in `test_release_metadata.py`.
+- The suite goes from 84 passed / 2 failed to **86 passed**.
+
+No runtime behaviour changed in this release; it is tests and test
+infrastructure only.
+
 ## [1.24.0] — 2026-08-05
 
 ### Added — Segmind Vega (compact SDXL, Apache-2.0)
