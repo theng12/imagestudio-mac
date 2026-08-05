@@ -73,17 +73,19 @@ guidance. FLUX schnell/klein and z-image turbo are unaffected.
   the kept set is exactly `model_index.json` + `scheduler/` + `text_encoder*/`
   + `tokenizer*/` + `unet/` + `vae/`, with the standalone checkpoints and
   `.fp16.*` duplicates excluded.
-- **SDXL pipeline path executed for real** on this machine: a tiny SDXL repo
-  loaded through the same `AutoPipelineForText2Image.from_pretrained()` call
-  the engine uses, resolved to `StableDiffusionXLPipeline`, moved to MPS in
-  bfloat16, accepted `negative_prompt` + `guidance_scale=2.0` + 6 steps, and
-  produced an image. This is the code path this release introduces.
-- **Not yet done:** a full-weight generate with the real 13.9 GB checkpoints.
-  The HF transfer is bandwidth/connection-bound here (one attempt died with
-  `RemoteProtocolError` mid-UNet and had to resume), so the first real-weight
-  generation will be the first confirmation that these specific files load.
-  The engine's existing error handling surfaces a load failure as a normal job
-  error, so a bad entry cannot affect other models.
+- **Full end-to-end run completed on a 16 GB Apple M-series Mac** with the real
+  DreamShaper XL Lightning weights:
+  - Filtered download fetched **exactly 18 files / 13.88 GB** — the standalone
+    `DreamShaperXL_Lightning*.safetensors` checkpoints and every `.fp16.*`
+    duplicate were excluded, and `cache.cache_state()` reports `cached` with
+    zero `.incomplete` bytes.
+  - `AutoPipelineForText2Image.from_pretrained()` resolved
+    `StableDiffusionXLPipeline` and loaded in **24.9 s** on MPS in bfloat16.
+  - 1024x1024, 6 steps, CFG 2.0, with a negative prompt: **77.6 s**, producing
+    a correct photorealistic image (not noise or a black frame).
+  - The transfer itself is bandwidth-bound and needed a resume after one
+    `RemoteProtocolError` mid-UNet; `snapshot_download` resumed cleanly from
+    the `.incomplete` blob, so the filtering change is resume-safe.
 
 ### Known follow-up — fp16 variants would halve these downloads
 
