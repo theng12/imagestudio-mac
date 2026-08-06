@@ -8,6 +8,59 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.26.0] — 2026-08-05
+
+### Removed — every model the fleet cannot actually use (45 → 36)
+
+Nine rows removed, 465.3 GB of undownloadable or unrunnable weight dropped from
+the tier plan. Three separate reasons:
+
+**Gated — cannot be fetched unattended (4 rows, 245.3 GB).** A gated repo needs
+its licence accepted on the Hugging Face website, so it can never be part of an
+automated fleet download.
+
+- `black-forest-labs/FLUX.1-dev` (57.9 GB)
+- `black-forest-labs/FLUX.1-Krea-dev` (57.9 GB)
+- `black-forest-labs/FLUX.1-Kontext-dev` (57.9 GB)
+- `stabilityai/stable-diffusion-3.5-large` (71.6 GB)
+
+**Cannot load at all (3 rows, 21.9 GB).** These carried `runtime_compatible=False`
+— externally-packed MLX weights with no mflux quantization metadata. They were
+catalogued pending loader support that never came, and two were sitting as
+stranded partial downloads.
+
+- `andrevp/Z-Image-Turbo-MLX-2bit` / `-4bit` / `-8bit`
+
+**Above every fleet tier (2 rows, 198.1 GB).**
+
+- `andrevp/Z-Image-Turbo-MLX` (fp16) — 32 GB floor
+- `black-forest-labs/FLUX.2-dev` — 64 GB floor, 177.6 GB download, also gated
+
+### What this leaves
+
+An invariant worth keeping: **no remaining local model is gated, unloadable, or
+above a 24 GB floor.** Every row left is fleet-eligible.
+
+The replacements were already better rows. `flux1-krea` and `flux1-kontext`
+keep their ungated mflux-4bit conversions — 9.6 GB at a 16 GB floor, against
+57.9 GB at 24 GB for the gated originals. `z-image` keeps `Tongyi-MAI/Z-Image`
+plus the two `wabibito/Onyx-*` diffusers quants added in 1.25.0, which are
+expected to be the first Z-Image quants that actually load.
+
+`flux1-dev`, `sd35` and `flux2-dev` are left with no rows. Their family
+definitions and `generation.py` wiring are **kept deliberately** — the frontend
+already hides families with no models (`visibleFamilies` applies
+`.filter(f => f.models.length > 0)`), so nothing renders, and an ungated or
+smaller conversion can be added later without rewiring dispatch.
+
+### Fixed — catalog text pointing at rows that no longer exist
+
+The Onyx entries described themselves by comparison to the andrevp rows
+("fills a size gap the andrevp MLX set doesn't cover", "unlike the
+runtime_compatible=False andrevp quants"). Those strings are user-visible in
+the model cards, so they were rewritten to stand on their own. A `FLUX.1 dev`
+comment pointing at the removed full checkpoint was corrected too.
+
 ## [1.25.0] — 2026-08-05
 
 ### Added — three diffusers-engine models (ERNIE-Image Turbo, Onyx Z-Image Turbo 3-bit/4-bit)
