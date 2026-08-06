@@ -496,7 +496,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=4.6,
         gated=False,
         quantization="mlx-4bit",
-        min_unified_memory_gb=8,
+        min_unified_memory_gb=8,  # operator-confirmed on 8 GB; peak not yet measured
         recommended_hardware="8 GB unified memory minimum; 16 GB recommended for stronger operating headroom.",
         capabilities=("txt2img", "img2img", "edit"),
         best_for="The recommended starter on Apple Silicon. Fastest loads and smallest disk footprint. Great for daily exploration and instruction edits.",
@@ -528,7 +528,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=8.6,
         gated=False,
         quantization="mlx-8bit",
-        min_unified_memory_gb=16,
+        min_unified_memory_gb=16,  # 8.6 GB of weights cannot fit an 8.6 GB machine
         recommended_hardware="M2 Pro / M3 16 GB or better. Best quality among klein 4B quants.",
         capabilities=("txt2img", "img2img", "edit"),
         best_for="The quality sweet spot for klein 4B. Near-full-precision output at half the disk and memory cost. Pick this over 4-bit when you can afford 16 GB.",
@@ -547,7 +547,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=9.5,
         gated=False,
         quantization="mlx-4bit",
-        min_unified_memory_gb=16,
+        min_unified_memory_gb=16,  # 9.5 GB of weights exceed an 8.6 GB machine
         recommended_hardware="M2 Pro / M3 16 GB or better.",
         capabilities=("txt2img", "img2img", "edit"),
         best_for="Run klein 9B on 16 GB Macs without compromise on architecture. Step up from 4B-4bit if you want more nuanced prompt following.",
@@ -557,25 +557,6 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("good",  "Style mixing prompts ('art deco poster meets cyberpunk neon')"),
             ("weak",  "4-bit anatomy artifacts still apply — multi-subject scenes risk extra heads/limbs"),
             ("avoid", "Final-quality close-up portraits — use the 8-bit variant if your Mac has 24 GB+"),
-        ),
-    ),
-    ModelEntry(
-        repo="AITRADER/FLUX2-klein-9B-mlx-8bit",
-        label="FLUX.2 klein 9B — MLX 8-bit",
-        family="flux2-klein",
-        size_gb=17.9,
-        gated=False,
-        quantization="mlx-8bit",
-        min_unified_memory_gb=24,
-        recommended_hardware="M2 Pro / M3 Pro 32 GB or better recommended.",
-        capabilities=("txt2img", "img2img", "edit"),
-        best_for="Best quality + best architecture combo for klein. Needs 24+ GB. Pick this if you want the most out of klein and have the hardware.",
-        use_cases=(
-            ("good",  "Reference quality for the klein line — sharpest details + best prompt following"),
-            ("good",  "Multi-subject scenes (group portraits, animals together, busy scenes) — 8-bit quant on 9B handles these well"),
-            ("good",  "Final-quality client work where you can't afford anatomy artifacts"),
-            ("weak",  "Slow per-generation — 9B + 8-bit is the most compute-heavy klein variant"),
-            ("avoid", "16 GB Macs — needs ≥24 GB headroom for stable operation"),
         ),
     ),
     # NOTE: 4 klein-base entries (FLUX.2-klein-base-4B/9B full + MLX 4-bit/8-bit)
@@ -789,7 +770,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         # NOT YET MEASURED — this is a provisional floor, not a benchmarked one.
         # Picked in line with the former andrevp 4-bit z-image row (16 GB) as
         # a starting point; see the "weak" use_case below.
-        min_unified_memory_gb=16,
+        min_unified_memory_gb=None,  # qualification pending
         recommended_hardware="Provisional: 16 GB unified memory, unmeasured on this app. Only transformer + text-encoder Linear layers are quantized; norms/embeddings/convs and the whole VAE stay fp16.",
         capabilities=("txt2img",),
         engine="diffusers",
@@ -813,7 +794,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         # 3-bit sibling above; this is diffusers/PyTorch on MPS, not mflux.
         # NOT YET MEASURED — provisional, matching the former andrevp 4-bit
         # z-image row's floor. See the "weak" use_case below for the caveat.
-        min_unified_memory_gb=16,
+        min_unified_memory_gb=None,  # qualification pending
         recommended_hardware="Provisional: 16 GB unified memory, unmeasured on this app. Only transformer + text-encoder Linear layers are quantized; norms/embeddings/convs and the whole VAE stay fp16.",
         capabilities=("txt2img",),
         engine="diffusers",
@@ -824,22 +805,6 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("good",  "Apache-2.0 license — commercial use OK"),
             ("good",  "Only Linear layers in transformer + text encoder are quantized; VAE stays fp16 for decode quality"),
             ("weak",  "16 GB memory floor is PROVISIONAL — not yet measured on 8/16/24 GB hardware by this app; treat it as a starting guess, not a verified number"),
-        ),
-    ),
-    ModelEntry(
-        repo="Tongyi-MAI/Z-Image",
-        label="Z-Image (full)",
-        family="z-image",
-        size_gb=20.6,
-        gated=False,
-        min_unified_memory_gb=16,
-        recommended_hardware="M2 Pro / M3 16 GB+. 20-30 steps for finals.",
-        capabilities=("txt2img", "img2img"),
-        best_for="Z-Image's full release — slower but higher quality. Strong on stylized output (anime, illustration, painterly) where FLUX leans photographic.",
-        use_cases=(
-            ("good",  "Final renders with stylized aesthetic"),
-            ("good",  "Strong on Chinese-language + non-Latin script prompts"),
-            ("weak",  "Slow per-generation (20-30 steps) — use Turbo for iteration"),
         ),
     ),
 
@@ -1113,7 +1078,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         # take the card's own machine (24 GB) as the floor rather than
         # inferring a smaller one from the 14.7 GB peak — see the "weak"
         # use_case below.
-        min_unified_memory_gb=24,
+        min_unified_memory_gb=16,  # 8.2 GB of weights leave nothing for activations on 8 GB
         recommended_hardware="Provisional: 24 GB unified memory, per the model card's own M3/24 GB benchmark (14.7 GB peak) — not independently measured by this app. Transformer + text encoder + prompt-enhancement are 4-bit; VAE stays BF16.",
         capabilities=("txt2img",),
         engine="diffusers",

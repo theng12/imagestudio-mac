@@ -19,6 +19,7 @@ This is server-driven and outside our control.
 """
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -28,8 +29,23 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from typing import Optional
 
-from huggingface_hub import HfApi, snapshot_download
-from huggingface_hub.utils import HfHubHTTPError
+# Hugging Face's Xet transport can wedge mid-transfer while holding the repo
+# file lock: bytes stop growing on disk and ``snapshot_download`` never
+# returns.  Each retry writes its own ``<blob>.<suffix>.incomplete``, so a
+# cancelled attempt's bytes are not reused and progress fragments across temp
+# files — a large repo can loop for hours without ever completing.  Observed
+# here on Xiejiehang/ERNIE-Image-Turbo-MLX-Q4 (stuck at 0.12 of 8.2 GB) and
+# wabibito/Onyx-Z-Image-Turbo-4bit (0.18 of 6.47 GB), and previously in Chat
+# Studio and Voice Studio, which both already carry this guard.
+#
+# This must run BEFORE huggingface_hub is imported, because its constants
+# module reads the flag at import time.  Set IMAGESTUDIO_ENABLE_XET=1 to opt
+# back in.
+if os.environ.get("IMAGESTUDIO_ENABLE_XET") != "1":
+    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
+from huggingface_hub import HfApi, snapshot_download  # noqa: E402
+from huggingface_hub.utils import HfHubHTTPError  # noqa: E402
 
 from . import cache, catalog, settings
 

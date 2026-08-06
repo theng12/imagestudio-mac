@@ -8,6 +8,40 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.27.0] — 2026-08-07
+
+### Fixed — model downloads could stall indefinitely (Xet transport)
+
+- Image Studio was missing the Xet-disable guard its sibling studios already
+  carry. Hugging Face's Xet transport can wedge mid-transfer while holding the
+  repo file lock, and because each retry writes its own
+  `<blob>.<suffix>.incomplete` rather than resuming, progress fragments across
+  temp files and a large repo can loop for hours without ever finishing.
+- Caught in the act: **ERNIE-Image-Turbo-Q4** sat at 0.12 GB of 8.2 GB with
+  **four** fragmented partials, and **Onyx-Z-Image-Turbo-4bit** at 0.18 GB of
+  6.47 GB with **two** — about 490 MB written across two hours with neither
+  completing. Both progressed normally once the classic HTTP transport was
+  restored.
+- Set `IMAGESTUDIO_ENABLE_XET=1` to opt back in.
+
+### Changed — catalogue narrowed to three families, with deliberate memory floors
+
+- The catalogue now carries the three families being taken forward:
+  `flux2-klein`, `z-image` and `ernie-image`. Dropped `FLUX2-klein-9B-8bit`
+  (17.9 GB) and the full `Z-Image` (20.6 GB). PixArt-Sigma and Qwen-Image are
+  retained for now.
+- Memory floors are set per model rather than uniformly, because a blanket
+  value is exactly how a floor ends up wrong: **16 GB** where the weights alone
+  already rule out an 8.6 GB machine (FLUX2-klein-4B-8bit, FLUX2-klein-9B-4bit,
+  ERNIE-Image-Turbo-Q4), and **8 GB** for FLUX2-klein-4B-4bit on operator
+  experience — recorded explicitly as *not yet measured*.
+- Left deliberately **open** only for `Onyx-Z-Image-Turbo-3bit` and `-4bit`,
+  whose fit is genuinely unknown: they will be allowed to run on 8 GB and the
+  floor raised if they fail. The guard still refuses everything else.
+- Worth remembering when those results land: weights are a lower bound, not a
+  prediction. Voice Studio's Audio8 is a 2.55 GB download that peaks at 8.2 GB,
+  because activations dominate rather than weights.
+
 ## [1.26.1] — 2026-08-06
 
 ### Fixed — an "80 GB" storage cap was actually enforcing 85.9 GB
