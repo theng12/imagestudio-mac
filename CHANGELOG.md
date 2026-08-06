@@ -8,6 +8,45 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.26.1] — 2026-08-06
+
+### Fixed — an "80 GB" storage cap was actually enforcing 85.9 GB
+
+`storage_policy` converted the user-facing `max_gb` with `1024 ** 3` (GiB) while
+the frontend renders every byte count through `humanBytes`, which divides by
+1000 and documents why. So a policy labelled "80 GB" did not begin deleting
+until 85.90 GB — the meter and the enforced limit disagreed by 7.4%, silently,
+in the direction of using more disk than was allowed. Both the `status()` cap
+and the `enforce()` cap now use decimal GB, matching the label.
+
+### Fixed — download ETA of 8.47e+72 seconds
+
+Observed live while Onyx-Z-Image-Turbo-4bit and ERNIE were downloading. The
+speed EMA multiplies by 0.7 on every sample with no new bytes, so during a
+stall it approaches zero without reaching it. A denormal like `1e-60` still
+passes the `_speed_bps > 0` guard, and dividing a multi-GB remainder by it
+produced ETAs around 1e72 seconds.
+
+- The EMA now floors to a true `0.0` below one byte per second.
+- The ETA guard requires **1 KB/s** of real throughput rather than merely
+  positive speed. A stalled download now reports no ETA, which is honest,
+  instead of a finite and absurd one.
+
+Progress percentage is unaffected and keeps reporting normally throughout —
+only the ETA is suppressed while throughput is unknowable.
+
+### Fixed — one failed metadata call blinded the progress bar for a whole job
+
+`_resolve_total_bytes()` returns 0 when `repo_info` raises, and a zero total
+makes `serialize()` report `percent: None` *and* suppress the ETA for the
+remainder of the download. A single transient or rate-limited call therefore
+left the UI blind until the job finished. It now falls back to the catalog's
+`size_gb`. That figure is an approximation, but an approximate bar beats no bar.
+
+Added `app/tests/test_download_progress.py` (6 tests) covering the stall, the
+sub-kilobyte trickle, the healthy-throughput case that must still show an ETA,
+the EMA reaching a true zero, and the catalog fallback. Suite 86 → 93.
+
 ## [1.26.0] — 2026-08-05
 
 ### Removed — every model the fleet cannot actually use (45 → 36)

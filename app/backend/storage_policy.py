@@ -116,7 +116,10 @@ def _snapshot(output_dir: Path) -> dict:
 def status(manager, output_dir: Path) -> dict:
     policy = _read()
     snap = _snapshot(output_dir)
-    maximum = round(policy["max_gb"] * 1024 ** 3)
+    # max_gb is a user-facing decimal "GB" value (80 → 80,000,000,000 bytes),
+    # matching the frontend's humanBytes (÷1000). A ×2**30 (GiB) cap here would
+    # make the enforced limit 85.9 GB while the label/meter say "80 GB".
+    maximum = round(policy["max_gb"] * 1_000_000_000)
     return {
         **policy,
         **{key: value for key, value in snap.items() if key != "rows"},
@@ -169,7 +172,7 @@ def enforce(manager, output_dir: Path, target_bytes: int | None = None) -> dict:
         if not policy["enabled"] and target_bytes is None:
             return result
         maximum = (max(0, int(target_bytes)) if target_bytes is not None
-                   else round(policy["max_gb"] * 1024 ** 3))
+                   else round(policy["max_gb"] * 1_000_000_000))
         cutoff = time.time() - policy["retention_days"] * 86400
         for path, _size, modified in list(before["rows"]):
             if modified >= cutoff:

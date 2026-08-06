@@ -116,3 +116,27 @@ def test_webui_exposes_whats_new_modal_next_to_version():
     assert 'class="whats-new-button"' in html
     assert 'aria-labelledby="whats-new-title"' in html
     assert 'fetch("/api/release-notes"' in script
+
+
+def test_cap_is_decimal_gb_matching_the_ui_label(tmp_path, monkeypatch):
+    """An "80 GB" cap must enforce 80 GB, not 85.9 GB.
+
+    `max_gb` is a user-facing decimal value and the frontend renders every byte
+    count through `humanBytes`, which divides by 1000 and documents why. The
+    cap was converting with 1024**3, so a policy labelled "80 GB" only started
+    deleting at 85.90 GB — the meter and the enforced limit disagreed by 7.4%,
+    silently, in the direction of using more disk than the user allowed.
+    """
+    monkeypatch.setattr(storage_policy, "SETTINGS_FILE", tmp_path / "policy.json")
+    (tmp_path / "policy.json").write_text(
+        json.dumps({"enabled": True, "retention_days": 30, "max_gb": 80.0})
+    )
+    out = tmp_path / "outputs"
+    out.mkdir()
+
+    result = storage_policy.status(Manager(), out)
+
+    assert result["max_gb"] == 80.0
+    assert result["max_bytes"] == 80_000_000_000
+    # The binary reading would have been 85_899_345_920.
+    assert result["max_bytes"] != round(80.0 * 1024 ** 3)
