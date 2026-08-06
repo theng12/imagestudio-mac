@@ -80,6 +80,14 @@ class DownloadJob:
                     # EMA: 30% new + 70% old. Smooths spikes from chunk arrivals
                     # without lagging too far behind real bandwidth changes.
                     self._speed_bps = 0.3 * instant + 0.7 * self._speed_bps
+                    # Floor the EMA. With no new bytes the term decays by 0.7
+                    # each sample, approaching zero without ever reaching it.
+                    # A denormal like 1e-60 still passes a `> 0` test, and
+                    # dividing a multi-GB remainder by it produced ETAs of
+                    # 8.47e+72 seconds. Below a byte per second there is no
+                    # meaningful throughput, so call it zero.
+                    if self._speed_bps < 1.0:
+                        self._speed_bps = 0.0
                     self._last_speed_sample = (now, observed)
         else:
             self._speed_bps = 0.0
@@ -104,7 +112,9 @@ class DownloadJob:
         eta_seconds = None
         if (
             self.state == "running"
-            and self._speed_bps > 0
+            # 1 KB/s, not "> 0": a barely-positive EMA during a stall yields an
+            # ETA that is technically finite and completely useless.
+            and self._speed_bps >= 1024.0
             and self.total_bytes > 0
             and self.started_at is not None
             and now - self.started_at >= 3.0
@@ -226,10 +236,26 @@ class DownloadManager:
                 continue
         return total
 
+    @staticmethod
+    def _catalog_total_bytes(repo: str) -> int:
+        """Fallback job size from the catalog when the HF API can't be reached.
+
+        A zero total makes `serialize()` report `percent: None` and suppress the
+        ETA for the entire job, so one transient (or rate-limited) `repo_info`
+        call leaves the UI blind until the download finishes. The catalog's own
+        `size_gb` is an approximation, but an approximate bar beats no bar.
+        """
+        model = catalog.get_model(repo)
+        size_gb = getattr(model, "size_gb", 0) or 0
+        return int(size_gb * 1_000_000_000)
+
     def _run(self, job: DownloadJob) -> None:
         job.state = "running"
         job.started_at = time.time()
-        job.total_bytes = self._resolve_total_bytes(job.repo, job.token)
+        job.total_bytes = (
+            self._resolve_total_bytes(job.repo, job.token)
+            or self._catalog_total_bytes(job.repo)
+        )
         cache.ensure_hub_dir()
         print(
             f"[downloads] starting {job.repo}  "
