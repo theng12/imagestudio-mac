@@ -8,6 +8,30 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.28.0] — 2026-08-07
+
+### Removed — three models that could never generate an image
+
+- `wabibito/Onyx-Z-Image-Turbo-3bit`, `wabibito/Onyx-Z-Image-Turbo-4bit` and
+  `Xiejiehang/ERNIE-Image-Turbo-MLX-Q4` are gone, along with the now-empty
+  `z-image` and `ernie-image` families. None had ever produced an image: job
+  history shows one attempt each, both failures, against fourteen successes for
+  FLUX.2 klein.
+- The Onyx checkpoints ship pre-packed quantized weights. The diffusers loader
+  read `attention.to_out.0.weight` as `[3840, 480]` where the unquantized
+  definition wants `[3840, 3840]` — exactly one eighth, which is what 4-bit
+  packing looks like to a loader that does not expect it. Routing them to mflux
+  instead got further and then failed the same way at the first matmul, so
+  neither engine can unpack them. The only Z-Image mflux supports is
+  `Tongyi-MAI/Z-Image-Turbo` at 32.9 GB, which is far past what these machines
+  can hold.
+- ERNIE fails differently and no less fatally: `decoder.conv_in.weight` arrives
+  as `[512, 3, 3, 32]` against an expected `[512, 32, 3, 3]`, an MLX-layout
+  checkpoint being read by PyTorch. mflux has no ERNIE config at all, so there
+  is no second path to try.
+- This leaves FLUX.2 klein as the catalogue's only working local family, and the
+  only one with a checkpoint that fits 8 GB. Reclaims 20 GB of cache.
+
 ## [1.27.0] — 2026-08-07
 
 ### Fixed — model downloads could stall indefinitely (Xet transport)
