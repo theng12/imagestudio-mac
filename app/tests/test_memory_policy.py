@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -37,14 +38,34 @@ def _reset(monkeypatch, tmp_path, manager=None):
     monkeypatch.setattr(memory_policy, "_RELEASING", False)
 
 
-def test_default_preserves_performance_mode(tmp_path, monkeypatch):
-    _reset(monkeypatch, tmp_path)
+def test_explicit_performance_mode_keeps_model_loaded(tmp_path, monkeypatch):
+    """`performance` must still pin a loaded model when an operator asks for
+    it. What changed is that it is no longer the *default* — see
+    test_default_mode_is_no_longer_the_one_that_never_releases below."""
+    manager = Manager()
+    _reset(monkeypatch, tmp_path, manager)
+    memory_policy.save("performance")
+    monkeypatch.setattr(memory_policy, "_LAST_ACTIVITY_AT", 100.0)
+    assert memory_policy.status()["mode"] == "performance"
+    assert memory_policy.run_due_release(now=100_000) is None
+    assert manager.releases == 0
+
+
+def test_default_mode_is_no_longer_the_one_that_never_releases(tmp_path, monkeypatch):
+    """With no operator choice on disk, an idle model must eventually be
+    freed. Previously the default was `performance` (idle_seconds=None), so
+    the release thread ran forever and did nothing."""
+    manager = Manager()
+    _reset(monkeypatch, tmp_path, manager)
+    monkeypatch.setattr(memory_policy, "_LAST_ACTIVITY_AT", 100.0)
     data = memory_policy.status()
-    assert data["mode"] == "performance"
-    assert data["idle_seconds"] is None
+    assert data["mode"] != "performance"
+    assert data["idle_seconds"] is not None
     assert [item["mode"] for item in data["options"]] == [
         "performance", "balanced", "memory_saver", "immediate",
     ]
+    assert memory_policy.run_due_release(now=100_000) is not None
+    assert manager.releases == 1
 
 
 def test_idle_policy_releases_once_after_deadline(tmp_path, monkeypatch):
@@ -87,3 +108,45 @@ def test_memory_policy_api_and_frontend_contract(tmp_path, monkeypatch):
     assert 'fetch("/api/memory-policy"' in script
     assert 'fetch("/api/memory/release"' in script
     assert PROCESS_TITLE == "Image Studio Mac"
+
+
+def test_shipped_default_actually_releases_on_idle(monkeypatch) -> None:
+    """The idle-release thread ran on every fleet machine and did nothing,
+    because the shipped default was "performance" (idle_seconds=None). Each
+    Studio ships this same skeleton, so on a shared 8 GB Mac 3-5 of them each
+    independently pinned a model forever: 16 of 19 machines could not start a
+    job. A default that never releases is not a default."""
+    assert memory_policy.MODES[memory_policy.DEFAULT_MODE]["idle_seconds"] is not None
+    assert (
+        memory_policy.MODES[memory_policy.SMALL_MACHINE_DEFAULT_MODE]["idle_seconds"]
+        is not None
+    )
+
+    # Small machines get the tighter budget; roomy ones keep a model warm longer.
+    monkeypatch.setattr(
+        memory_policy, "_SMALL_MACHINE_GB", 12, raising=False
+    )
+    import psutil
+
+    monkeypatch.setattr(
+        psutil, "virtual_memory",
+        lambda: SimpleNamespace(total=int(8.6e9), available=int(4e9),
+                                used=int(4.6e9), percent=53.0),
+    )
+    assert memory_policy.default_mode() == "memory_saver"
+
+    monkeypatch.setattr(
+        psutil, "virtual_memory",
+        lambda: SimpleNamespace(total=int(25.8e9), available=int(18e9),
+                                used=int(7.8e9), percent=30.0),
+    )
+    assert memory_policy.default_mode() == "balanced"
+
+
+def test_operator_choice_still_wins_over_the_machine_default(monkeypatch, tmp_path) -> None:
+    """An explicit mode is persisted and must survive; the memory-aware default
+    only applies when nobody has chosen."""
+    settings = tmp_path / "memory_policy.json"
+    settings.write_text('{"mode": "performance"}\n', encoding="utf-8")
+    monkeypatch.setattr(memory_policy, "SETTINGS_FILE", settings)
+    assert memory_policy._read()["mode"] == "performance"

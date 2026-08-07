@@ -8,6 +8,34 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.28.1] — 2026-08-07
+
+### Fixed — Image Studio shipped a memory policy that could never fire
+
+- The idle-release mechanism is fully implemented and its background thread has
+  been running on this machine the whole time, waking every 5 s. It just had
+  nothing to do: the shipped default was `performance`, whose `idle_seconds` is
+  `None`, so `run_due_release()` returned immediately every single time,
+  pinning a loaded model in unified memory forever.
+- This is not an Image Studio bug so much as a shared-assumption bug. Image,
+  Chat, Video, Music and Voice Studio all shipped the *same* skeleton with the
+  *same* `DEFAULT_MODE = "performance"`. That default is reasonable for an app
+  that owns its machine. The actual deployment puts 3-5 Studios on one 8 GB
+  Mac, where each independently concludes that pinning its model forever is
+  free.
+- Measured fleet-wide 2026-08-07: 16 of 19 machines sat below the memory
+  guard's 3.2 GB floor with 1.5-4.4 GB of swap burned and could not start a job
+  at all.
+- The default is now chosen from the host's own memory — `memory_saver` (120 s)
+  below 12 GB, `balanced` (600 s) above — instead of assuming a machine alone.
+  An operator's explicit choice, persisted in `memory_policy.json`, still wins;
+  `performance` remains available and still pins when asked for.
+- Note this only fixes *fresh installs*. `memory_policy.json` is gitignored, so
+  an in-place Update or Reset never resets an operator-chosen mode.
+- Ported from the Voice Studio fix (v1.32.3) that first characterized this
+  fleet-wide pattern; see that changelog for the measured before/after swap and
+  free-memory numbers.
+
 ## [1.28.0] — 2026-08-07
 
 ### Removed — three models that could never generate an image
