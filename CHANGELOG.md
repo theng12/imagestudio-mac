@@ -8,6 +8,21 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.28.2] — 2026-08-08
+
+### Fixed — the mode picker still called Performance the default
+
+- v1.28.1 made the default depend on the host's memory, but the settings UI
+  still hardcoded "Performance · default". On every 8 GB machine — which is
+  most of the fleet — that label was simply false, and it pointed the owner at
+  the exact mode that caused the thrash.
+- The badge is now bound to the `default_mode` the backend actually reports, so
+  it follows the machine instead of a constant. The card's header text also
+  dropped its own "Performance remains the default" claim for the same reason.
+  Test asserts the hardcoded label is gone and that all four modes are bound.
+- Ported from the Voice Studio fix (v1.32.5) that first caught this on the
+  fleet; see that changelog for the original report.
+
 ## [1.28.1] — 2026-08-07
 
 ### Fixed — Image Studio shipped a memory policy that could never fire
