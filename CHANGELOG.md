@@ -8,6 +8,28 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.28.3] — 2026-08-08
+
+### Fixed — `psutil` was not a declared base dependency
+
+- `memory_policy.default_mode()` imports `psutil` unconditionally on every
+  install to size the machine-aware default, but `psutil` was only listed in
+  `requirements-generation.lock.txt` — the optional MLX/diffusers stack
+  installed by "Install Generation", not the base install `install.js`
+  actually runs (`requirements.txt` / `requirements.lock.txt`).
+- On a genuinely fresh base-only install, `psutil` would be missing; the
+  `ImportError` is caught and swallowed inside `default_mode()`, silently
+  falling back to `DEFAULT_MODE` ("balanced") regardless of host memory —
+  quietly defeating the exact fix v1.28.1 shipped, on the machines that need
+  it most. This checkout's own `conda_env` happened to have `psutil` 7.2.2
+  installed already (not from a fresh `install.js` run), which is why the
+  gap wasn't visible locally.
+- Added `psutil>=7.0` to `requirements.txt` and pinned `psutil==7.2.2` in
+  `requirements.lock.txt` so the base install always has it. Left the
+  generation-stack lock alone; the pin lives there too as a transitive
+  dependency of `accelerate`.
+- Ported from the identical fix in Chat Studio (v1.24.7).
+
 ## [1.28.2] — 2026-08-08
 
 ### Fixed — the mode picker still called Performance the default

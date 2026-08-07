@@ -165,3 +165,19 @@ def test_ui_does_not_hardcode_performance_as_the_default() -> None:
     assert "Performance · default" not in markup
     for mode in ("performance", "balanced", "memory_saver", "immediate"):
         assert f"memoryPolicy.default_mode==='{mode}'" in markup
+
+
+def test_psutil_is_a_declared_base_dependency() -> None:
+    """default_mode() imports psutil unconditionally on every install to size
+    the machine-aware default, but psutil previously lived only in
+    requirements-generation.lock.txt — the optional MLX/diffusers stack, not
+    the base install install.js actually runs. A base-only install would hit
+    the ImportError, which default_mode()'s bare except swallows, silently
+    falling back to DEFAULT_MODE regardless of host memory: exactly the wrong
+    direction on the small machines this default targets. Guards against that
+    dependency quietly drifting back out of the base files."""
+    root = Path(__file__).resolve().parents[1]
+    requirements = (root / "requirements.txt").read_text(encoding="utf-8")
+    lock = (root / "requirements.lock.txt").read_text(encoding="utf-8")
+    assert "psutil" in requirements
+    assert "psutil==" in lock
