@@ -23,7 +23,35 @@ MODES = {
     "memory_saver": {"idle_seconds": 120, "label": "Memory Saver"},
     "immediate": {"idle_seconds": 0, "label": "Immediate"},
 }
-DEFAULT_MODE = "performance"
+# "performance" pins a loaded model in unified memory forever. That is a fine
+# default for an app that owns its machine — and a bad one for the deployment
+# that actually exists, where 3-5 Studios share a single 8 GB Mac and none of
+# them knows the others are resident. Each Studio ships this same skeleton with
+# this same default, so every one of them independently concluded that holding
+# its model forever was free.
+#
+# Measured on the fleet 2026-08-07: 16 of 19 machines sat below the memory
+# guard's 3.2 GB floor with 1.5-4.4 GB of swap burned and could not start a job
+# at all. The idle-release thread was running the whole time — it just had
+# nothing to do, because idle_seconds is None in this mode.
+#
+# The default now reflects the machine instead of an imagined solo one. An
+# operator's explicit choice, persisted in memory_policy.json, always wins.
+_SMALL_MACHINE_GB = 12
+DEFAULT_MODE = "balanced"
+SMALL_MACHINE_DEFAULT_MODE = "memory_saver"
+
+
+def default_mode() -> str:
+    """Mode to use when the operator has not chosen one."""
+    try:
+        import psutil
+        total_gb = psutil.virtual_memory().total / 1e9
+    except Exception:
+        return DEFAULT_MODE
+    return SMALL_MACHINE_DEFAULT_MODE if total_gb < _SMALL_MACHINE_GB else DEFAULT_MODE
+
+
 CHECK_INTERVAL_SECONDS = 5
 
 _LOCK = threading.RLock()
@@ -46,7 +74,7 @@ def _read() -> dict:
         raw = {}
     mode = raw.get("mode") if isinstance(raw, dict) else None
     if mode not in MODES:
-        mode = DEFAULT_MODE
+        mode = default_mode()
     return {"mode": mode}
 
 
@@ -154,7 +182,7 @@ def status() -> dict:
             due_at = _LAST_ACTIVITY_AT + idle_seconds
         return {
             "mode": mode,
-            "default_mode": DEFAULT_MODE,
+            "default_mode": default_mode(),
             "idle_seconds": idle_seconds,
             "options": [{"mode": key, **value} for key, value in MODES.items()],
             "active_jobs": active_count,
