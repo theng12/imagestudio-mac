@@ -136,20 +136,6 @@ FAMILIES: dict[str, Family] = {
             "and background removal respectively. Commercial-safe by design."
         ),
     ),
-    "z-image": Family(
-        id="z-image",
-        label="Z-Image (Tongyi)",
-        summary=(
-            "Tongyi Lab's Z-Image — an open Chinese-team image model with a turbo "
-            "(distilled, few-step) variant alongside the standard release. Mixed "
-            "training data with strong stylization and prompt comprehension."
-        ),
-        how_to_use=(
-            "Z-Image Turbo: 4-8 steps for fast iteration. Standard Z-Image: 20-30 "
-            "steps for quality. Z-Image is particularly strong on stylized outputs "
-            "(illustration, anime, painterly) compared to FLUX's photorealistic lean."
-        ),
-    ),
     "qwen-image": Family(
         id="qwen-image",
         label="Qwen-Image (txt2img)",
@@ -350,25 +336,6 @@ FAMILIES: dict[str, Family] = {
             "generate. Honors width/height. FLUX dev gives higher quality than "
             "schnell at the cost of more trial credit per image. Runs on Nebius' "
             "servers — prompts leave this Mac."
-        ),
-    ),
-    "ernie-image": Family(
-        id="ernie-image",
-        label="ERNIE-Image (Baidu)",
-        summary=(
-            "Baidu's ERNIE-Image Turbo — a text-to-image DiT, here as a 4-bit "
-            "MLX/diffusers conversion. Runs via the diffusers engine on MPS. "
-            "Apache-2.0, ungated, but slow per-step — treat it as a patience-"
-            "required option, not an iteration model."
-        ),
-        how_to_use=(
-            "Standard txt2img prompts, 1024x1024, 5 steps — matching the card's "
-            "own benchmark. The card gives no guidance/CFG value, but the repo "
-            "id and card both call it 'Turbo' and it's step-distilled like "
-            "FLUX.1 schnell and Z-Image Turbo, so the UI defaults guidance to "
-            "0.0 by the same analogy rather than inheriting a generic 4.0. "
-            "Expect a slow generation — the card measured ~44 s/step on a 24 GB "
-            "M3. Ungated — no HF token needed."
         ),
     ),
     "huggingface": Family(
@@ -756,64 +723,6 @@ CATALOG: tuple[ModelEntry, ...] = (
     # to actually load, where the removed andrevp rows were externally-packed
     # MLX with no mflux quantization metadata and could not be loaded at all.
     ModelEntry(
-        repo="wabibito/Onyx-Z-Image-Turbo-3bit",
-        label="Onyx Z-Image Turbo — 3-bit (diffusers)",
-        family="z-image",
-        size_gb=5.25,
-        gated=False,
-        # `quantization` is intentionally left unset (None): that field + the
-        # "Apple Silicon (MLX)" UI filter mean "runs through the native mflux
-        # MLX engine" everywhere else in this catalog — no other
-        # engine="diffusers" entry sets it. This repo is a 3-bit quantization
-        # of the underlying weights, but it's loaded through diffusers/PyTorch
-        # on MPS, not mflux, so it shouldn't claim the MLX-runtime badge.
-        # NOT YET MEASURED — this is a provisional floor, not a benchmarked one.
-        # Picked in line with the former andrevp 4-bit z-image row (16 GB) as
-        # a starting point; see the "weak" use_case below.
-        min_unified_memory_gb=None,  # qualification pending
-        recommended_hardware="Provisional: 16 GB unified memory, unmeasured on this app. Only transformer + text-encoder Linear layers are quantized; norms/embeddings/convs and the whole VAE stay fp16.",
-        capabilities=("txt2img",),
-        engine="diffusers",
-        diffusers_pipeline="ZImagePipeline",
-        best_for="A 3-bit MLX quantization of Z-Image Turbo (Tongyi-MAI/Z-Image-Turbo) in diffusers format — a genuine quantization of the same weights, not a separate finetune. The smallest Z-Image option in the catalog, and the cheapest way to try the family on a constrained machine. Apache-2.0, ungated, commercial use OK.",
-        use_cases=(
-            ("good",  "The smallest Z-Image row at 5.25 GB, on the same diffusers loading path as the 4-bit"),
-            ("good",  "Apache-2.0 license — commercial use OK"),
-            ("good",  "Diffusers-format ZImagePipeline — loads through the engine the app already runs"),
-            ("weak",  "16 GB memory floor is PROVISIONAL — not yet measured on 8/16/24 GB hardware by this app; treat it as a starting guess, not a verified number"),
-            ("weak",  "3-bit is the most aggressive quantization in the z-image set — expect more visible quality loss than 4-bit/8-bit"),
-        ),
-    ),
-    ModelEntry(
-        repo="wabibito/Onyx-Z-Image-Turbo-4bit",
-        label="Onyx Z-Image Turbo — 4-bit (diffusers)",
-        family="z-image",
-        size_gb=6.47,
-        gated=False,
-        # `quantization` intentionally left unset — see the same note on the
-        # 3-bit sibling above; this is diffusers/PyTorch on MPS, not mflux.
-        # NOT YET MEASURED — provisional, matching the former andrevp 4-bit
-        # z-image row's floor. See the "weak" use_case below for the caveat.
-        min_unified_memory_gb=None,  # qualification pending
-        recommended_hardware="Provisional: 16 GB unified memory, unmeasured on this app. Only transformer + text-encoder Linear layers are quantized; norms/embeddings/convs and the whole VAE stay fp16.",
-        capabilities=("txt2img",),
-        engine="diffusers",
-        diffusers_pipeline="ZImagePipeline",
-        best_for="A 4-bit MLX quantization of Z-Image Turbo (Tongyi-MAI/Z-Image-Turbo) in diffusers format. The higher-quality of the two Onyx quants — pick this over the 3-bit unless you are tight on memory or disk. Apache-2.0, ungated, commercial use OK.",
-        use_cases=(
-            ("good",  "Diffusers-format ZImagePipeline — loads through the engine the app already runs"),
-            ("good",  "Apache-2.0 license — commercial use OK"),
-            ("good",  "Only Linear layers in transformer + text encoder are quantized; VAE stays fp16 for decode quality"),
-            ("weak",  "16 GB memory floor is PROVISIONAL — not yet measured on 8/16/24 GB hardware by this app; treat it as a starting guess, not a verified number"),
-        ),
-    ),
-
-    # ──────────── Qwen-Image base (wired in v1.3.0) ────────────
-    # Using the canonical Qwen/Qwen-Image repo + on-the-fly mflux quantization.
-    # We skip the mlx-community/Qwen-Image-4bit pre-quant since we can't verify
-    # its MLX format compatibility (madroid's repos taught us this lesson).
-    # On-the-fly quantize=4 is the known-safe path.
-    ModelEntry(
         repo="Qwen/Qwen-Image",
         label="Qwen-Image",
         family="qwen-image",
@@ -1061,42 +970,6 @@ CATALOG: tuple[ModelEntry, ...] = (
     # 0.38.0's AUTO_TEXT2IMAGE_PIPELINES_MAPPING, so AutoPipelineForText2Image
     # would fail to resolve it — diffusers_pipeline is set explicitly below,
     # not optionally, or loading breaks.
-    ModelEntry(
-        repo="Xiejiehang/ERNIE-Image-Turbo-MLX-Q4",
-        label="ERNIE-Image Turbo — MLX 4-bit (diffusers)",
-        family="ernie-image",
-        size_gb=8.2,
-        gated=False,
-        # `quantization` intentionally left unset — this repo's weights are a
-        # 4-bit quantization, but it loads through diffusers/PyTorch on MPS,
-        # not mflux, and no other engine="diffusers" entry in this catalog
-        # sets the field (it drives the "Apple Silicon (MLX)" UI filter, which
-        # elsewhere means "runs through the native mflux MLX engine").
-        # QUALIFIED FROM THE MODEL CARD ONLY (not measured by this app): the
-        # card reports 14.7 GB peak memory for one 1024x1024 image at 5 steps
-        # on an M3 / 24 GB. We haven't reproduced that number ourselves, so we
-        # take the card's own machine (24 GB) as the floor rather than
-        # inferring a smaller one from the 14.7 GB peak — see the "weak"
-        # use_case below.
-        min_unified_memory_gb=16,  # 8.2 GB of weights leave nothing for activations on 8 GB
-        recommended_hardware="Provisional: 24 GB unified memory, per the model card's own M3/24 GB benchmark (14.7 GB peak) — not independently measured by this app. Transformer + text encoder + prompt-enhancement are 4-bit; VAE stays BF16.",
-        capabilities=("txt2img",),
-        engine="diffusers",
-        diffusers_pipeline="ErnieImagePipeline",
-        best_for="A 4-bit MLX/diffusers conversion of Baidu's ERNIE-Image Turbo DiT (baidu/ERNIE-Image-Turbo). Apache-2.0, ungated, commercial use OK. Slow: the card's own benchmark measured ~44 s/step (231 s for a 5-step 1024x1024 image) on an M3/24 GB — budget for it, don't expect interactive speed.",
-        use_cases=(
-            ("good",  "Apache-2.0 license — commercial use OK"),
-            ("good",  "Ungated download — no HF token or license acceptance"),
-            ("good",  "4-bit transformer/text-encoder/prompt-enhancement with a BF16 VAE for decode quality"),
-            ("weak",  "24 GB memory floor comes from the model card's own benchmark, NOT a measurement by this app — treat it as provisional until verified on 8/16/24 GB hardware here"),
-            ("avoid", "Fast iteration — the card measured ~44 s/step (231 s for 5 steps at 1024x1024); it completes by taking its time, not by being quick"),
-        ),
-    ),
-
-    # ──────────── SeedVR2 upscaler (image restoration) — new in v1.7.0 ──────
-    # Self-contained single repo (numz/SeedVR2_comfyUI), no base model. Wired via
-    # _generate_seedvr2 (mflux's SeedVR2). Lives in the Image-to-Image tab because
-    # it needs an input image; prompt/guidance/steps/strength are ignored.
     ModelEntry(
         repo="numz/SeedVR2_comfyUI",
         label="SeedVR2 7B — Upscaler",
