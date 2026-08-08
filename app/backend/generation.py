@@ -6,9 +6,8 @@ download manager. The mflux import is wrapped in try/except so the server
 still runs (catalog / download features only) when mflux isn't installed
 yet — the generation endpoints just return 503 in that case.
 
-Wired families (workers exist): flux2-klein, flux1-schnell, flux1-dev,
-flux1-kontext, qwen-image, qwen-edit, fibo, z-image. flux2-dev is still
-unwired (waiting on a mflux release that adds the Flux2Dev class).
+Wired families (workers exist): flux2-klein, flux1-schnell, flux1-krea,
+flux1-kontext, qwen-image, qwen-edit, fibo, and seedvr2.
 
 Output images land in `app/output/<job_id>.png`.
 """
@@ -144,28 +143,19 @@ _PACKAGE_CHECKLIST = [
 # Per-engine dependency requirements. Family ids must match the catalog.
 _ENGINE_REQUIREMENTS = {
     "flux2-klein":   ["mflux", "mlx", "Pillow", "numpy"],
-    "flux2-dev":     ["mflux", "mlx", "Pillow", "numpy"],
     "flux1-schnell": ["mflux", "mlx", "Pillow", "numpy"],
-    "flux1-dev":     ["mflux", "mlx", "Pillow", "numpy"],
     "flux1-krea":    ["mflux", "mlx", "Pillow", "numpy"],
     "seedvr2":       ["mflux", "mlx", "Pillow", "numpy"],
     # diffusers-engine families (v1.9.0+) — PyTorch/MPS, not mflux/MLX.
-    "sd35":          ["torch", "diffusers", "Pillow", "numpy"],
     "sana":          ["torch", "diffusers", "Pillow", "numpy"],
     "pixart-sigma":  ["torch", "diffusers", "Pillow", "numpy"],
     "lumina2":       ["torch", "diffusers", "Pillow", "numpy"],
     "auraflow":      ["torch", "diffusers", "Pillow", "numpy"],
     "sdxl":          ["torch", "diffusers", "Pillow", "numpy"],
-    # roadmap engines — declared so the UI shows what they'll need
     "flux1-kontext": ["mflux", "mlx", "Pillow", "numpy"],
     "qwen-edit":     ["transformers", "mlx", "Pillow", "numpy"],
-    # MLX-community ecosystem additions (Phase D). All ride mflux today; if a
-    # future worker uses a different inference library, update this list and
-    # _WIRED_FAMILIES together.
-    "flux1-lite":    ["mflux", "mlx", "Pillow", "numpy"],
-    "shuttle":       ["mflux", "mlx", "Pillow", "numpy"],
-    "hidream":       ["mflux", "mlx", "Pillow", "numpy"],
     "qwen-image":    ["transformers", "mlx", "Pillow", "numpy"],
+    "fibo":          ["mflux", "mlx", "Pillow", "numpy"],
 }
 
 # Which engines have a fully-working worker. Keep in sync with the branches in
@@ -175,27 +165,22 @@ _ENGINE_REQUIREMENTS = {
 # Wired families (workers exist):
 # - flux2-klein   ← _generate_flux2_klein + _generate_klein_edit
 # - flux1-schnell ← _generate_flux1 (mflux's Flux1 with ModelConfig.schnell())
-# - flux1-dev     ← _generate_flux1 (mflux's Flux1 with ModelConfig.dev())
 # - flux1-krea    ← _generate_flux1 (mflux's Flux1 with ModelConfig.krea_dev()) — v1.5.0
 # - flux1-kontext ← _generate_kontext (mflux's Flux1Kontext)
 # - qwen-image    ← _generate_qwen_image (mflux's QwenImage) — v1.3.0
 # - qwen-edit     ← _generate_qwen_edit (mflux's QwenImageEdit) — v1.3.0
 # - fibo          ← _generate_fibo (mflux's FIBO + FIBOEdit) — v1.3.0
-# - z-image       ← _generate_z_image (mflux's ZImage) — v1.3.0
 # - seedvr2       ← _generate_seedvr2 (mflux's SeedVR2 upscaler; img2img tab) — v1.7.0
-#
-# NOT wired (no mflux inference class):
-# - flux2-dev — mflux has no Flux2Dev class. Would need a future mflux release.
 _WIRED_FAMILIES = {
-    "flux2-klein", "flux1-schnell", "flux1-dev", "flux1-krea", "flux1-kontext",
-    "qwen-image", "qwen-edit", "fibo", "z-image", "seedvr2",
+    "flux2-klein", "flux1-schnell", "flux1-krea", "flux1-kontext",
+    "qwen-image", "qwen-edit", "fibo", "seedvr2",
 }
 
 # Families that run on the diffusers engine (PyTorch/MPS) instead of mflux. They
 # don't go through mflux family dispatch (routed by `engine` in _dispatch_txt2img),
 # so they're tracked separately and excluded from the mflux truth audit. Listed
 # here so diagnostics() can mark them "wired" once torch/diffusers are installed.
-_DIFFUSERS_FAMILIES = {"sd35", "sana", "pixart-sigma", "lumina2", "auraflow", "sdxl"}
+_DIFFUSERS_FAMILIES = {"sana", "pixart-sigma", "lumina2", "auraflow", "sdxl"}
 
 
 def _probe_package(display_name: str, import_name: Optional[str] = None) -> dict:
@@ -1199,25 +1184,15 @@ class GenerationManager:
         family = model.family
         if family == "flux2-klein":
             self._generate_flux2_klein(job, output_path)
-        elif family in ("flux1-schnell", "flux1-dev", "flux1-krea"):
-            # mflux ships ONE Flux1 class that handles schnell, dev, AND the Krea
-            # finetune — the variant is selected via the ModelConfig (schnell() /
-            # dev() / krea_dev()) inside _generate_flux1.
+        elif family in ("flux1-schnell", "flux1-krea"):
+            # mflux's Flux1 class selects schnell or Krea through ModelConfig.
             self._generate_flux1(job, model, output_path)
         elif family == "qwen-image":
             self._generate_qwen_image(job, model, output_path)
         elif family == "fibo":
             self._generate_fibo(job, model, output_path)
-        elif family == "z-image":
-            self._generate_z_image(job, model, output_path)
         elif family == "seedvr2":
             self._generate_seedvr2(job, model, output_path)
-        elif family == "flux2-dev":
-            raise NotImplementedError(
-                "FLUX.2 dev isn't supported by mflux yet — only FLUX.2 klein has "
-                "a wired mflux class. Use FLUX.2 klein 9B (full) for the highest "
-                "klein quality, or wait for mflux to add a Flux2Dev variant."
-            )
         else:
             raise NotImplementedError(
                 f"No txt2img worker implemented for family '{family}'."
@@ -1734,57 +1709,5 @@ class GenerationManager:
 
         result = flux.generate_image(**gen_kwargs)
         result.save(str(output_path), overwrite=True)
-
-    def _generate_z_image(self, job: GenerationJob, model_entry, output_path: Path) -> None:
-        """Run mflux's ZImage (Tongyi Lab). Handles both Z-Image + Z-Image Turbo.
-        Stylized output strength — illustration, anime, painterly."""
-        from mflux.models.z_image.variants.z_image import ZImage  # type: ignore
-        from mflux.models.common.config.model_config import ModelConfig  # type: ignore
-
-        params = job.params
-        repo = params["repo"]
-        # Repo name → ModelConfig: "Turbo" → z_image_turbo(), else z_image()
-        if "turbo" in repo.lower():
-            model_config = ModelConfig.z_image_turbo()
-            default_steps = 6   # Turbo is distilled — fewer steps
-        else:
-            model_config = ModelConfig.z_image()
-            default_steps = 20
-        quantize = params.get("quantize")
-
-        print(f"[gen] z-image repo={repo} (config={model_config.aliases[0]}) "
-              f"steps={params.get('steps', default_steps)}", flush=True)
-
-        flux = ZImage(
-            model_path=repo,
-            quantize=quantize,
-            model_config=model_config,
-        )
-
-        seed = params.get("seed")
-        if seed is None or seed < 0:
-            import random
-            seed = random.randint(0, 2**32 - 1)
-        job.resolved_seed = int(seed)
-
-        gen_kwargs = {
-            "seed": int(seed),
-            "prompt": params["prompt"],
-            "num_inference_steps": int(params.get("steps", default_steps)),
-            "height": int(params["height"]),
-            "width": int(params["width"]),
-            "guidance": float(params.get("guidance", 4.0)),
-        }
-        negative_prompt = (params.get("negative_prompt") or "").strip() or None
-        if negative_prompt:
-            gen_kwargs["negative_prompt"] = negative_prompt
-        if params.get("image_path"):
-            gen_kwargs["image_path"] = params["image_path"]
-        if params.get("image_strength") is not None:
-            gen_kwargs["image_strength"] = float(params["image_strength"])
-
-        result = flux.generate_image(**gen_kwargs)
-        result.save(str(output_path), overwrite=True)
-
 
 manager = GenerationManager()

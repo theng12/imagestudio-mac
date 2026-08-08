@@ -39,21 +39,6 @@ FAMILIES: dict[str, Family] = {
             "instruction tuning and is better for fine-tuning workflows."
         ),
     ),
-    "flux2-dev": Family(
-        id="flux2-dev",
-        label="FLUX.2 dev",
-        summary=(
-            "The full FLUX.2 dev checkpoint. Highest quality of the FLUX.2 line "
-            "but extremely large — multi-tens-of-GB on disk and needs lots of "
-            "unified memory."
-        ),
-        how_to_use=(
-            "Use guidance 3.5-5.0 and 20-30 steps for the best quality. Long "
-            "load times on first use; subsequent loads are faster once weights "
-            "are memory-mapped. Gated on Hugging Face — accept the license on "
-            "the repo page first."
-        ),
-    ),
     "flux1-schnell": Family(
         id="flux1-schnell",
         label="FLUX.1 schnell",
@@ -64,18 +49,6 @@ FAMILIES: dict[str, Family] = {
         how_to_use=(
             "Use guidance=0.0 and 1-4 steps. Schnell ignores guidance because "
             "it's distilled. Great for fast iteration."
-        ),
-    ),
-    "flux1-dev": Family(
-        id="flux1-dev",
-        label="FLUX.1 dev",
-        summary=(
-            "Original FLUX.1 dev — non-commercial license, gated. Higher fidelity "
-            "than schnell but slower."
-        ),
-        how_to_use=(
-            "Use guidance 3.5 and 20-30 steps. Accept the license on the "
-            "Hugging Face page before downloading."
         ),
     ),
     "flux1-krea": Family(
@@ -203,23 +176,6 @@ FAMILIES: dict[str, Family] = {
             "Standard txt2img prompts. ~18-20 steps, guidance ~4.5. Native 1024px. "
             "Ungated — no HF token or license needed. Runs on MPS; the first "
             "generation loads the pipeline, later ones reuse it."
-        ),
-    ),
-    "sd35": Family(
-        id="sd35",
-        label="Stable Diffusion 3.5",
-        summary=(
-            "Stability AI's Stable Diffusion 3.5 — a strong general-purpose "
-            "text-to-image model. Runs via the HuggingFace diffusers engine on "
-            "PyTorch/MPS (not mflux/MLX), so it's slower than the FLUX-MLX models "
-            "but is the gateway to the broader diffusers model ecosystem."
-        ),
-        how_to_use=(
-            "Standard txt2img prompts. Recommended ~28 steps, guidance ~3.5-4.5 "
-            "(the FLUX-style 4-step defaults will look bad — raise the steps). "
-            "Gated on Hugging Face: accept the license on the repo page and set "
-            "your HF token in Settings first. The first generation is slow (the "
-            "pipeline loads + warms up on MPS); later ones reuse the loaded model."
         ),
     ),
     "sdxl": Family(
@@ -601,16 +557,6 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("avoid", "Pure txt2img — use FIBO Lite/full for that, not Edit"),
         ),
     ),
-    # Onyx Z-Image Turbo quants (wabibito) — a genuine 3-bit/4-bit MLX
-    # quantization of Tongyi-MAI/Z-Image-Turbo (the card is explicit that this
-    # is a quantization, not a finetune). The andrevp MLX conversions this
-    # family used to carry were removed in v1.26.0 as unloadable; these repos
-    # instead declare library_name: diffusers with pipeline
-    # ZImagePipeline, which the installed diffusers 0.38.0 has natively
-    # (registered in AUTO_TEXT2IMAGE_PIPELINES_MAPPING under "z-image") — so
-    # these are wired through engine="diffusers", NOT mflux, and are expected
-    # to actually load, where the removed andrevp rows were externally-packed
-    # MLX with no mflux quantization metadata and could not be loaded at all.
     ModelEntry(
         repo="Qwen/Qwen-Image",
         label="Qwen-Image",
@@ -891,7 +837,7 @@ def get_model(repo: str) -> Optional[ModelEntry]:
 def generation_profile(m: ModelEntry) -> dict:
     """Describe the controls and defaults the Generate UI should expose.
 
-    Providers and engines accept different parameters. Keeping this contract
+    Engines accept different parameters. Keeping this contract
     beside the catalog prevents the frontend from showing controls that are
     silently ignored and gives future catalog additions one place to declare
     their generation behavior.
@@ -902,7 +848,7 @@ def generation_profile(m: ModelEntry) -> dict:
         or (m.family != "sdxl" and ("turbo" in repo or "lightning" in repo))
     )
     # SDXL Lightning is step-distilled (fewer steps), not guidance-distilled —
-    # unlike FLUX schnell/klein or z-image turbo, it still uses real
+    # unlike FLUX schnell/klein, it still uses real
     # classifier-free guidance (just a low value) and negative prompts are a
     # normal, commonly-used control for it. So it's excluded from `distilled`
     # above even though "lightning" is in the repo id, and gets its own
@@ -914,32 +860,16 @@ def generation_profile(m: ModelEntry) -> dict:
         defaults.update(steps=4, guidance=1.0, image_strength=0.85)
     elif m.family == "flux1-schnell":
         defaults.update(steps=4, guidance=0.0)
-    elif m.family in {"flux1-dev", "flux1-krea", "flux1-kontext"}:
+    elif m.family in {"flux1-krea", "flux1-kontext"}:
         defaults.update(steps=24, guidance=3.5)
     elif m.family in {"qwen-image", "qwen-edit", "fibo"}:
         defaults.update(steps=20, guidance=4.0)
-    elif m.family == "z-image":
-        defaults.update(steps=9 if "turbo" in repo else 24, guidance=0.0 if "turbo" in repo else 4.0)
-    elif m.family == "sd35":
-        defaults.update(steps=28, guidance=4.0)
     elif m.family in {"sana", "pixart-sigma"}:
         defaults.update(steps=20, guidance=4.5)
     elif m.family == "lumina2":
         defaults.update(steps=35, guidance=4.0)
     elif m.family == "auraflow":
         defaults.update(steps=40, guidance=3.5)
-    elif m.family == "ernie-image":
-        # ERNIE-Image Turbo's own card benchmark used 5 steps — that's the one
-        # hard number we have, so steps=5 is measured, not guessed. The card
-        # does not state a guidance value. It's named "Turbo" and its repo id
-        # contains "turbo", which already trips the `distilled` check above
-        # (hiding the guidance/negative-prompt controls in the UI) — by
-        # analogy to the other guidance-distilled turbo models in this catalog
-        # (FLUX.1 schnell, Z-Image Turbo) we default guidance to 0.0 rather
-        # than inheriting the generic 4.0. If real-world output looks
-        # undercooked at guidance=0.0, that's a signal this assumption is
-        # wrong and the card should be re-checked for an explicit CFG value.
-        defaults.update(steps=5, guidance=0.0)
     elif m.family == "sdxl":
         # Two very different tunings share this family. Lightning finetunes are
         # step-distilled: few steps, low CFG (high guidance washes them out).
@@ -968,7 +898,7 @@ def generation_profile(m: ModelEntry) -> dict:
             and not (m.family == "qwen-edit" or (m.family == "fibo" and "edit" in m.capabilities))
         ),
         "runtime_quantization": m.engine == "mflux" and not m.is_apple_optimized and not is_upscaler,
-        "loras": m.family in {"flux2-klein", "flux1-schnell", "flux1-dev", "flux1-krea"},
+        "loras": m.family in {"flux2-klein", "flux1-schnell", "flux1-krea"},
     }
     summary = (
         "Upscaler workflow: provide an image; generation tuning is handled by the model."
