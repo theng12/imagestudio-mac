@@ -8,6 +8,33 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.29.1] — 2026-08-09
+
+### Removed — unreachable model-family scaffolding
+
+The v1.29.0 local-only catalog has 19 models across 13 families, but its
+generation module still described six families with no catalog consumer and
+kept two unreachable mflux dispatch paths. They could not be selected through
+the API or UI; they were retired roadmap and removed-model residue.
+
+- Removed unused `flux2-dev`, `flux1-dev`, and `sd35` family definitions;
+  stale dependency maps for those plus `flux1-lite`, `shuttle`, and `hidream`;
+  unused wired markers for `flux1-dev`, `sd35`, and `z-image`; and unreachable
+  FLUX.2-dev / FLUX.1-dev / Z-Image dispatch branches.
+- Deleted the unreachable mflux Z-Image worker and stale per-family defaults.
+  The diffusers catalog, including SDXL, Sana, PixArt Sigma, Lumina 2, and
+  AuraFlow, is unchanged.
+- Added the missing FIBO dependency-readiness mapping. FIBO already generated
+  correctly, but diagnostics could claim it was ready without checking the
+  mflux/MLX stack.
+- Added a regression that requires family definitions, dependency readiness,
+  and wired-family sets to have an actual catalog consumer.
+
+Net reduction: **140 lines**. The model catalog, download set, public API, and
+all reachable generation behavior are unchanged. Verification: **101 tests
+passed** and `audit_truth.py --strict` reports no drift (previously two phantom
+wires). Use the normal Update flow; generation dependencies did not change.
+
 ## [1.29.0] — 2026-08-08
 
 ### Removed — cloud providers are gone; Image Studio is local-only

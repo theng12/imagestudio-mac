@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend import catalog
+from backend import catalog, generation
 from backend.main import FLEET_TOKEN, app, get_catalog
 
 
@@ -95,6 +95,13 @@ def test_every_catalog_model_runs_locally_and_reports_a_real_cache_state():
     assert not any(family.startswith(("pollinations", "cloudflare", "together",
                                       "gemini", "nebius", "huggingface"))
                    for family in payload["families"])
+
+
+def test_every_family_configuration_has_a_catalog_consumer():
+    used = {model.family for model in catalog.CATALOG}
+    assert set(catalog.FAMILIES) == used
+    assert set(generation._ENGINE_REQUIREMENTS) == used
+    assert generation._WIRED_FAMILIES | generation._DIFFUSERS_FAMILIES == used
 
 
 def test_txt2img_rejects_a_repo_that_is_not_in_the_catalog():
