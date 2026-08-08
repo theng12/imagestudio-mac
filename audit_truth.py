@@ -89,7 +89,6 @@ def parse_catalog_families(catalog_path: Path) -> set[str]:
 
     Skipped (they don't go through mflux dispatch, so counting their families
     here would wrongly flag them as orphans):
-      - Cloud entries (provider="cloud") → route through app/backend/providers.
       - Diffusers entries (engine="diffusers") → route through the diffusers
         worker on PyTorch/MPS, not mflux family dispatch.
     """
@@ -99,8 +98,6 @@ def parse_catalog_families(catalog_path: Path) -> set[str]:
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             if node.func.id == "ModelEntry":
                 kwargs = {kw.arg: kw.value for kw in node.keywords}
-                if _string_literal(kwargs.get("provider")) == "cloud":
-                    continue
                 if _string_literal(kwargs.get("engine")) == "diffusers":
                     continue
                 fam = _string_literal(kwargs.get("family"))

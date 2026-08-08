@@ -8,6 +8,76 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.29.0] — 2026-08-08
+
+### Removed — cloud providers are gone; Image Studio is local-only
+
+Image Studio shipped hosted-API models from v1.5.0 through v1.14.0. They are no
+longer needed, and they cluttered the library: twelve of the catalog's
+thirty-one entries were hosted endpoints, and because a cloud entry synthesised
+a `cache.state` of `"cached"`, every one of them showed up in Studio Hub's
+`downloaded=true` model picker as if it were a real local download. **Every
+model in the catalog now runs on this Mac.**
+
+- **Catalog: 31 → 19 models, 22 → 16 families.** Removed `pollinations/flux`,
+  `cloudflare/{flux-1-schnell,leonardo-lucid-origin,leonardo-phoenix,sdxl-base,sdxl-lightning,dreamshaper-lcm}`,
+  `together/flux-1-schnell-free`, `gemini/gemini-2.5-flash-image`,
+  `nebius/flux-dev`, and `huggingface/{flux-1-schnell,sd3-medium}`, plus their
+  six provider families. No local model was touched.
+- **Deleted `app/backend/providers/`** (8 files, 736 lines) — the six stdlib-only
+  HTTP adapters and their base classes.
+- **`GET /api/catalog`** no longer emits `is_cloud`, `cloud_provider`,
+  `cloud_model_id`, `cloud_credentials_ok`, `cloud_provider_label`,
+  `cloud_signup_url`, or `requires_billing`. `provider` is retained and is now
+  always `"local"`. `supports_custom_dimensions`, `sizes`,
+  `default_aspect_ratio`, and `custom` are unchanged. **Every model now reports
+  its real on-disk `cache.state`** — no more synthesised `"cached"`, so a
+  downloaded-only model picker can no longer be handed something that was never
+  downloaded.
+- **Settings:** removed the `cloudflare_account_id`, `cloudflare_api_token`,
+  `together_api_key`, `gemini_api_key`, and `nebius_api_key` fields from
+  `POST /api/settings` and the whole "Cloud provider keys" card from the
+  Settings tab. **`hf_token` is untouched** — it is the model-download
+  credential. Any cloud keys already saved in `settings.json` are left on disk
+  and simply ignored; revoke them at the provider if you want them dead.
+- **Models tab:** the **Local | Cloud** scope tabs are gone. The library is one
+  list again, and the RAM planner, fit filters, and MLX/format filters apply to
+  everything in it.
+
+### Fixed — the exact-canvas invariant now applies to every generation
+
+`_publish_final_png` verified that a finished PNG matched the selected canvas
+exactly, but exempted cloud routes because a hosted endpoint can pick its own
+output size. With the cloud path gone that exemption is dead weight, and it was
+the only way a dimension downgrade could reach the gallery unchallenged. The
+check is now unconditional for any job that selected an aspect ratio.
+
+Likewise `_validate_local_size_selection` no longer takes an `is_cloud`
+parameter that made it return early, and `_dispatch_with_memory_recovery` no
+longer takes a `local` flag — memory-failure recovery and telemetry sampling now
+apply to every job, because every job is local.
+
+### Verification
+
+- Full suite green: **100 passed** (98 before, plus two new regression tests —
+  one asserting no catalog entry claims a hosted provider or a synthesised cache
+  state, one asserting `POST /api/generate/txt2img` answers **400** rather than
+  500 for a repo that is no longer in the catalog, including the removed cloud
+  ids a stale client might still send).
+- `audit_truth.py` reports the same pre-existing `flux1-dev` / `z-image` phantom
+  wires as v1.28.3 and nothing new. `node --check` clean on `app/frontend/app.js`.
+- **No dependency change.** The adapters were deliberately stdlib-only
+  (`urllib`/`json`/`base64`), so `requirements.txt` is untouched and a plain
+  **Update** is enough — no need to re-run *Install Generation*.
+
+### Note for downstream consumers
+
+GenStudio routes its paid image generation through its own adapters and
+credential vault, never through this studio, so nothing revenue-bearing is
+affected. Studio Hub never polled this studio for provider health. Existing
+history rows that name a removed model still render — they fall back to showing
+the raw `repo` id — but they cannot be re-run.
+
 ## [1.28.3] — 2026-08-08
 
 ### Fixed — `psutil` was not a declared base dependency

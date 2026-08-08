@@ -37,7 +37,7 @@ def test_verified_memory_failure_retries_once_with_same_seed(tmp_path, monkeypat
             raise RuntimeError("MPS backend out of memory")
 
     manager._dispatch_with_memory_recovery(
-        job, staged, final, dispatch, local=True,
+        job, staged, final, dispatch,
     )
 
     assert attempts == [None, 8675309]
@@ -71,7 +71,6 @@ def test_second_memory_failure_schedules_supervised_restart(tmp_path, monkeypatc
             tmp_path / "working.png",
             tmp_path / "final.png",
             lambda *_args: (_ for _ in ()).throw(MemoryError()),
-            local=True,
         )
 
     status = manager.memory_status()
@@ -82,7 +81,7 @@ def test_second_memory_failure_schedules_supervised_restart(tmp_path, monkeypatc
     assert started == [0.75]
 
 
-def test_normal_and_cloud_failures_are_not_retried_or_restart_triggers(
+def test_normal_failures_are_not_retried_or_restart_triggers(
         tmp_path, monkeypatch):
     manager = GenerationManager()
     attempts = 0
@@ -103,7 +102,6 @@ def test_normal_and_cloud_failures_are_not_retried_or_restart_triggers(
             tmp_path / "working.png",
             tmp_path / "final.png",
             fail,
-            local=False,
         )
     assert attempts == 1
 

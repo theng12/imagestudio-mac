@@ -5,7 +5,7 @@ A custom Pinokio app for FLUX image generation on Apple Silicon. Mac-only
 and MLX.
 
 > **Current status:** model catalog, download manager, weight-import flows, and
-> local/cloud generation (txt2img / img2img / image edit) are live. Generation
+> local generation (txt2img / img2img / image edit) are live. Generation
 > dependencies remain optional so model browsing and downloads stay lightweight.
 
 ## What it does today
@@ -25,13 +25,6 @@ and MLX.
   **Install Generation**). Note: **Ideogram 4 can't run on Apple MPS** — its
   weights are fp8/nf4 (fp8 is an unsupported MPS dtype; nf4 needs CUDA-only
   bitsandbytes) — so it's parked until mflux ships native MLX support.
-- **Cloud option (free):** alongside the local MLX models, the catalog includes
-  **Pollinations FLUX** — a `provider="cloud"` entry that generates on
-  Pollinations' free hosted API. No API key, no download, no local GPU; it runs
-  on any Mac. Your prompt is sent to a third-party server and output is
-  best-effort/rate-limited, so it's a convenience option, not a replacement for
-  the local, offline, deterministic MLX models. See
-  [Cloud providers](#cloud-providers-free) below.
 - See at a glance which models are cached locally vs. need downloading.
 - Confirm-before-download dialog with on-disk size and unified-memory
   recommendations so you don't accidentally fetch 60 GB.
@@ -202,8 +195,8 @@ The WebUI footer shows the running version. The same value is also surfaced at:
 Local generation also has verified memory self-protection. Image Studio retries
 one genuine allocator failure after unloading cached engines and preserving the
 resolved seed. A second allocator failure requests a supervised restart only
-when the startup service is installed; normal validation, cloud-provider,
-network, cancellation, and disk errors never trigger that path. `/api/health`
+when the startup service is installed; normal validation, network,
+cancellation, and disk errors never trigger that path. `/api/health`
 and `/api/generate/diagnostics` expose privacy-safe memory and watchdog
 restart-rate evidence for Studio Hub alerts.
 
@@ -265,97 +258,15 @@ curl -N http://<server>:<port>/api/downloads/stream
 2. Restart the launcher. Pinokio prints a LAN URL alongside the local one.
 3. From your main Mac, point requests at that LAN URL.
 
-## Cloud providers (free)
+## Per-model size menu
 
-Most models in Image Studio KH run **locally** on Apple Silicon via mflux/MLX.
-A second class of model — catalog entries with `provider: "cloud"` — generates
-on a hosted API instead. There are **twelve**, all free or free-trial, spanning
-several model families (FLUX, SDXL, SD3, NVIDIA Sana, Leonardo, Gemini):
-
-| Model (`repo`) | Provider | Key needed? | Family / notes |
-|---|---|---|---|
-| `pollinations/flux` | Pollinations | **None** | **NVIDIA Sana** — zero-setup, no key; anon tier serves Sana |
-| `cloudflare/flux-1-schnell` | Cloudflare Workers AI | Account ID + API token | FLUX schnell; free 10k neurons/day; **fixed output size** |
-| `cloudflare/leonardo-lucid-origin` | Cloudflare Workers AI | Account ID + API token | **Leonardo Lucid** (non-FLUX/SD); photoreal; honors width/height |
-| `cloudflare/leonardo-phoenix` | Cloudflare Workers AI | Account ID + API token | **Leonardo Phoenix** (non-FLUX/SD); strong prompt adherence |
-| `cloudflare/sdxl-base` | Cloudflare Workers AI | Account ID + API token | **SDXL 1.0**; free; honors width/height + negative prompt |
-| `cloudflare/sdxl-lightning` | Cloudflare Workers AI | Account ID + API token | **SDXL-Lightning**; fastest free CF model (few-step) |
-| `cloudflare/dreamshaper-lcm` | Cloudflare Workers AI | Account ID + API token | **DreamShaper 8 LCM** (SD1.5); stylized/illustrative |
-| `together/flux-1-schnell-free` | Together AI | API key | FLUX schnell; free endpoint; honors width/height, 4 steps |
-| `gemini/gemini-2.5-flash-image` | Google AI Studio | API key **+ billing** | **Gemini Nano Banana** (non-FLUX/SD); **NOT free** — needs billing enabled (free tier = 0 image requests); fixed size + seed ignored |
-| `nebius/flux-dev` | Nebius AI Studio | API key | **FLUX dev** quality; free trial credits, no card; honors width/height |
-| `huggingface/flux-1-schnell` | Hugging Face | Reuses your **HF token** | FLUX schnell; token needs **Inference Providers** permission |
-| `huggingface/sd3-medium` | Hugging Face | Reuses your **HF token** | **Stable Diffusion 3 Medium**; better text/prompt adherence |
-
-Keys for the keyed providers are entered once in **Settings → Cloud provider
-keys** (stored in `app/backend/settings.json`, gitignored, sent only to that
-provider). Hugging Face is the exception — it reuses the same **Hugging Face
-token** you set for downloads (it just needs the *Inference Providers*
-permission), so there's no separate field. The examples below use Pollinations
-because it needs no key, but the flow is identical for the others once their key
-is saved.
-
-**Per-model size menu.** Every catalog model (local + cloud) also carries a
-ready-to-use **`sizes`** array — `[{ aspect_ratio, label, width, height, tier,
-default?, fixed? }]` — plus `default_aspect_ratio` and a `custom`
-`{ min_px, max_px, step, max_pixels }` range (null for fixed-output models). Cloud
-models list their full higher resolutions (up to 1080p+); local models a
-`/16`-aligned ~1.3 MP ladder; fixed-output endpoints a single `fixed: true` size.
-`tier` is `fast | balanced | high | ultra` so clients can map Fast/Balanced/Highest
-presets directly. See `app/backend/sizes.py`.
-
-Each cloud model's catalog entry also exposes `cloud_credentials_ok` (true only
-when the required credential is set), `cloud_provider_label`, and
-`cloud_signup_url` so the UI — and downstream consumers — can gate readiness and
-link straight to where you get the key.
-
-**How it works**
-
-- No download, no local GPU, no `Install Generation` required — the cloud path
-  is a plain HTTPS request, so it works on any Mac.
-- In the UI it appears in the **Models** tab as ready (no download button) and
-  in the **Generate** tab's model dropdown like any other txt2img model.
-- Trade-offs: your prompt is sent to **Pollinations' servers** (don't use it for
-  private/sensitive prompts), latency is variable, the service is rate-limited,
-  and output is **not deterministic** even with a fixed seed.
-
-**Generate with the cloud model — same endpoint as local models:**
-
-```sh
-# Curl — start a job against the cloud model (note: no download step needed)
-curl -X POST http://<server>:<port>/api/generate/txt2img \
-  -H 'content-type: application/json' \
-  -d '{"repo": "pollinations/flux", "prompt": "a red apple on a wooden table", "width": 1024, "height": 1024}'
-# → {"job": {"id": "...", "state": "running", ...}}
-# Poll GET /api/generate/jobs/{id}; fetch the PNG at /api/generate/jobs/{id}/image
-```
-
-```javascript
-// JavaScript
-const res = await fetch("http://<server>:<port>/api/generate/txt2img", {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ repo: "pollinations/flux", prompt: "a neon koi pond at night", width: 1024, height: 1024 }),
-});
-const { job } = await res.json();
-```
-
-```python
-# Python
-import requests
-r = requests.post("http://<server>:<port>/api/generate/txt2img", json={
-    "repo": "pollinations/flux", "prompt": "a misty pine forest", "width": 1024, "height": 1024,
-})
-job = r.json()["job"]
-```
-
-**Adding more cloud providers.** Drop a `CloudProvider` subclass into
-`app/backend/providers/`, register it in `providers/__init__.py`'s `_REGISTRY`,
-then add a catalog `ModelEntry` with `provider="cloud"`, a matching
-`cloud_provider` id, and a `cloud_model_id`. Providers that need an API key
-should read it from settings/`ENVIRONMENT` (Pollinations needs none). Cloud
-entries are intentionally excluded from `audit_truth.py`, which only audits the
-local mflux engine wiring.
+Every catalog model carries a ready-to-use **`sizes`** array — `[{ aspect_ratio,
+label, width, height, tier, default?, fixed? }]` — plus `default_aspect_ratio`
+and a `custom` `{ min_px, max_px, step, max_pixels }` range (null for
+fixed-output models). Local models get a `/16`-aligned ~1.3 MP ladder with
+`tier` of `1K` or `2K`; a fixed-output model gets a single `fixed: true` size.
+Clients (Story Studio) drive their aspect-ratio and resolution pickers straight
+off it with no pixel math. See `app/backend/sizes.py`.
 
 ## Generation API
 

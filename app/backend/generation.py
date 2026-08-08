@@ -492,22 +492,19 @@ class GenerationManager:
         staged_path: Path,
         final_path: Path,
         dispatch,
-        *,
-        local: bool,
     ) -> None:
         memory_retries = 0
         while True:
             try:
                 dispatch(job, staged_path)
-                if local:
-                    self._consecutive_memory_failures = 0
+                self._consecutive_memory_failures = 0
                 return
             except Exception as exc:
                 self._discard_path(staged_path)
                 self._discard_path(final_path)
                 job.output_path = None
                 job.asset_evidence = {}
-                verified_memory_failure = local and _is_memory_failure(exc)
+                verified_memory_failure = _is_memory_failure(exc)
                 if verified_memory_failure:
                     job.resource_memory_failure = True
                     self._record_memory_failure(job, exc)
@@ -525,7 +522,7 @@ class GenerationManager:
                             flush=True,
                         )
                         continue
-                elif local:
+                else:
                     self._consecutive_memory_failures = 0
                 if self._restart_scheduled:
                     raise RuntimeError(
@@ -821,12 +818,10 @@ class GenerationManager:
         if image_format != "PNG" or width < 1 or height < 1:
             raise RuntimeError("generation did not produce a valid PNG asset")
 
-        # Local generations must publish the exact selected canvas. This keeps
-        # a runtime/provider downgrade from being silently presented as the
-        # requested 2K output. Cloud routes can legitimately choose their own
-        # dimensions and are therefore excluded from this check.
-        model = catalog.get_model(str(job.params.get("repo", "")))
-        if model is not None and not model.is_cloud and job.params.get("aspect_ratio"):
+        # A generation must publish the exact selected canvas. This keeps a
+        # runtime downgrade from being silently presented as the requested 2K
+        # output.
+        if job.params.get("aspect_ratio"):
             expected = (int(job.params.get("width", 0)), int(job.params.get("height", 0)))
             if (width, height) != expected:
                 raise RuntimeError(
@@ -917,7 +912,6 @@ class GenerationManager:
                     staged_path,
                     final_path,
                     self._dispatch_edit,
-                    local=True,
                 )
                 if job.cancel_event.is_set():
                     job.state = "cancelled"
@@ -1122,12 +1116,7 @@ class GenerationManager:
             job.progress = 0.05          # move the bar off zero the moment work starts
             print(f"[gen] starting {job.job_id}: {job.params}", flush=True)
 
-            # Cloud models don't need mflux — they're an HTTP call. Only gate the
-            # local engines behind the mflux availability check.
-            _repo = job.params.get("repo")
-            _model = catalog.get_model(_repo) if _repo else None
-            _is_cloud = bool(_model and _model.is_cloud)
-            if not MFLUX_AVAILABLE and not _is_cloud:
+            if not MFLUX_AVAILABLE:
                 job.state = "error"
                 job.error = f"mflux not installed: {MFLUX_IMPORT_ERROR}"
                 job.finished_at = time.time()
@@ -1137,13 +1126,9 @@ class GenerationManager:
                 return
 
             memory_policy.mark_generation_started()
-            telemetry = (
-                resource_telemetry.JobResourceSampler(
-                    lambda payload: setattr(job, "resource_telemetry", payload)
-                ).start()
-                if not _is_cloud
-                else None
-            )
+            telemetry = resource_telemetry.JobResourceSampler(
+                lambda payload: setattr(job, "resource_telemetry", payload)
+            ).start()
             working_dir = OUTPUT_DIR / ".working"
             working_dir.mkdir(parents=True, exist_ok=True)
             staged_path = working_dir / f"{job.job_id}.png"
@@ -1155,7 +1140,6 @@ class GenerationManager:
                     staged_path,
                     final_path,
                     self._dispatch_txt2img,
-                    local=not _is_cloud,
                 )
                 if job.cancel_event.is_set():
                     job.state = "cancelled"
@@ -1202,12 +1186,6 @@ class GenerationManager:
         model = catalog.get_model(repo)
         if model is None:
             raise ValueError(f"Repo {repo} is not in the catalog")
-
-        # Cloud models route to a provider (HTTP), not a local mflux class, and
-        # have nothing to cache — handle them before the local cache check.
-        if model.is_cloud:
-            self._generate_cloud(job, model, output_path)
-            return
 
         if cache.cache_state(repo) != "cached":
             raise ValueError(f"Model {repo} is not fully cached locally — download it first")
@@ -1385,63 +1363,6 @@ class GenerationManager:
             raise RuntimeError("mflux SeedVR2 returned an unexpected result; expected GeneratedImage.")
         result.save(str(output_path), overwrite=True)
 
-    def _generate_cloud(self, job: GenerationJob, model_entry, output_path: Path) -> None:
-        """
-        Route a cloud (provider="cloud") model to its provider in
-        app/backend/providers. No mflux, no local weights — just an HTTP call.
-        The provider returns encoded image bytes which we normalise to PNG.
-        """
-        from . import providers  # lazy: keeps providers optional at import time
-        from . import settings as app_settings
-
-        params = job.params
-        provider = providers.get_provider(model_entry.cloud_provider or "")
-        if provider is None:
-            raise RuntimeError(
-                f"No cloud provider registered for '{model_entry.cloud_provider}'."
-            )
-        # Resolve this provider's credentials (api keys etc.) from app settings.
-        # Keyless providers (Pollinations) get an empty config and ignore it.
-        config = app_settings.get_cloud_credentials(model_entry.cloud_provider or "")
-
-        seed = params.get("seed")
-        if seed is None or seed < 0:
-            import random
-            seed = random.randint(0, 2**32 - 1)
-        job.resolved_seed = int(seed)
-
-        # Cloud providers don't report step progress — present an indeterminate
-        # single-step job so the UI spinner still animates.
-        job.total_steps = 1
-        job.current_step = 0
-
-        req = providers.CloudRequest(
-            prompt=params["prompt"],
-            width=int(params["width"]),
-            height=int(params["height"]),
-            seed=int(seed),
-            model_id=model_entry.cloud_model_id,
-            negative_prompt=(params.get("negative_prompt") or "").strip() or None,
-        )
-        print(
-            f"[gen] cloud {model_entry.cloud_provider} model={model_entry.cloud_model_id} "
-            f"{req.width}x{req.height} seed={seed}",
-            flush=True,
-        )
-        image_bytes = provider.generate(req, config)
-
-        # Normalise to PNG at output_path. Pillow is present in the generation
-        # env; if it's somehow absent (cloud-only, no mflux install) or the
-        # bytes aren't decodable, fall back to writing them raw — browsers
-        # content-sniff the served file either way.
-        try:
-            import io
-            from PIL import Image  # type: ignore
-            Image.open(io.BytesIO(image_bytes)).save(str(output_path), format="PNG")
-        except Exception:
-            output_path.write_bytes(image_bytes)
-
-        job.current_step = 1
 
     def _generate_flux2_klein(self, job: GenerationJob, output_path: Path) -> None:
         """

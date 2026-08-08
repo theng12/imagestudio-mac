@@ -258,103 +258,6 @@ FAMILIES: dict[str, Family] = {
             "The 7B model is heavy; best on a high-memory Mac (M3 Ultra is ideal)."
         ),
     ),
-    # ── Cloud families (v1.5.0) — NOT mflux engines; routed via providers/ ──
-    "pollinations": Family(
-        id="pollinations",
-        label="Pollinations (cloud, free)",
-        summary=(
-            "Free hosted text-to-image via Pollinations.ai — no API key, no "
-            "download, no local GPU. Runs on Pollinations' servers, so your "
-            "prompt leaves this Mac. Best-effort and rate-limited."
-        ),
-        how_to_use=(
-            "Pick it like any model and generate — there's nothing to download. "
-            "Standard txt2img prompts. Because it's a free shared service, expect "
-            "variable latency and occasional queueing. Don't send private or "
-            "sensitive prompts to a third-party cloud service."
-        ),
-    ),
-    "cloudflare": Family(
-        id="cloudflare",
-        label="Cloudflare Workers AI (cloud)",
-        summary=(
-            "Image generation on Cloudflare's Workers AI edge network. Free tier: "
-            "10,000 'neurons'/day, no credit card. Needs a free Cloudflare Account "
-            "ID + API token (set them once in Settings → Cloud provider keys)."
-        ),
-        how_to_use=(
-            "Add your Cloudflare Account ID + API token in Settings, then pick a "
-            "Cloudflare model and generate. Several models share the free "
-            "10k-neuron/day quota: FLUX.1 schnell (fast, but fixed output size — it "
-            "ignores the width/height controls), plus SDXL, SDXL-Lightning, "
-            "DreamShaper, and Leonardo Lucid/Phoenix, which DO honor width/height. "
-            "Runs on Cloudflare's servers — prompts leave this Mac."
-        ),
-    ),
-    "together": Family(
-        id="together",
-        label="Together AI (cloud)",
-        summary=(
-            "Image generation via Together AI. The FLUX.1 [schnell] Free endpoint "
-            "is free with a (free) Together API key; new accounts also get trial "
-            "credits for the paid endpoints. Set the key in Settings."
-        ),
-        how_to_use=(
-            "Add your Together API key in Settings, then pick a Together model and "
-            "generate. The free schnell endpoint honors width/height and caps at "
-            "4 steps. Runs on Together's servers — prompts leave this Mac."
-        ),
-    ),
-    "gemini": Family(
-        id="gemini",
-        label="Google AI Studio (cloud, needs billing)",
-        summary=(
-            "Image generation with Google's Gemini 2.5 Flash Image ('Nano Banana'). "
-            "A different model family from the FLUX/SD providers. NOTE: this is NOT "
-            "free — Google's free tier allows 0 image-generation requests, so it "
-            "needs a Google AI Studio / Cloud account with BILLING ENABLED."
-        ),
-        how_to_use=(
-            "Enable billing on your Google AI Studio / Cloud account, add the API "
-            "key in Settings, then pick the Gemini model and generate. Without "
-            "billing you'll get a quota error (free tier = 0 image requests). Output "
-            "size is chosen by the model (~1024px) — width/height + seed are ignored. "
-            "Stricter content filters than the open models. Runs on Google's servers."
-        ),
-    ),
-    "nebius": Family(
-        id="nebius",
-        label="Nebius AI Studio (cloud)",
-        summary=(
-            "Image generation via Nebius AI Studio (OpenAI-compatible). New accounts "
-            "get free trial credits (no credit card) covering FLUX dev, FLUX schnell, "
-            "and SDXL. Needs a free Nebius API key (set it in Settings). FLUX dev is "
-            "a quality step up from the free schnell-only cloud options."
-        ),
-        how_to_use=(
-            "Add your Nebius API key in Settings, then pick the Nebius model and "
-            "generate. Honors width/height. FLUX dev gives higher quality than "
-            "schnell at the cost of more trial credit per image. Runs on Nebius' "
-            "servers — prompts leave this Mac."
-        ),
-    ),
-    "huggingface": Family(
-        id="huggingface",
-        label="Hugging Face (cloud)",
-        summary=(
-            "Image generation via Hugging Face Inference Providers. Uses the SAME "
-            "Hugging Face token you set for downloads — as long as that token has the "
-            "'Inference Providers' permission. Free users get only a small monthly "
-            "inference credit, so this is best as a bring-your-own-token option."
-        ),
-        how_to_use=(
-            "Set a Hugging Face token (Settings → Hugging Face token) that has the "
-            "'Inference Providers' permission, then pick the Hugging Face model and "
-            "generate. Honors width/height. The free monthly credit is small — for "
-            "heavy use, the other cloud providers go further. Runs on Hugging Face's "
-            "servers — prompts leave this Mac."
-        ),
-    ),
 }
 
 
@@ -383,21 +286,15 @@ class ModelEntry:
     # artifacts on multi-subject scenes, and saying so up front avoids the
     # "this model sucks" reaction after a bad generation.
     use_cases: tuple[tuple[str, str], ...] = field(default_factory=tuple)
-    # ── Cloud-provider routing (v1.5.0) ─────────────────────────────────────
-    # Local models leave these at defaults. A cloud model sets provider="cloud"
-    # + cloud_provider (a registry id in app/backend/providers) + cloud_model_id
-    # (the model name to request from that provider). Cloud models have NO
-    # Hugging Face download — `repo` is a synthetic stable id used only as the
-    # catalog key + job param, never fetched from HF. cache state is synthesised
-    # as "cached" by the /api/catalog endpoint so the UI treats them as ready.
-    provider: str = "local"                 # "local" | "cloud"
-    cloud_provider: Optional[str] = None    # e.g. "pollinations"
-    cloud_model_id: Optional[str] = None    # provider-specific model name, e.g. "flux"
+    # ── Execution provider ──────────────────────────────────────────────────
+    # Every model in this catalog runs locally. Cloud providers were removed in
+    # v1.29.0; this field is retained only because the catalog payload still
+    # reports it to downstream consumers (Story Studio, Studio Hub).
+    provider: str = "local"                 # always "local"
     # ── Local inference engine (v1.9.0) ─────────────────────────────────────
-    # Which engine runs a LOCAL model. "mflux" (default) = Apple MLX via mflux.
+    # Which engine runs the model. "mflux" (default) = Apple MLX via mflux.
     # "diffusers" = HuggingFace diffusers on PyTorch/MPS, for models mflux has no
-    # class for (SD3.5, Sana, Ideogram 4, …). Cloud models ignore this — a
-    # provider="cloud" entry short-circuits before engine dispatch.
+    # class for (SD3.5, Sana, Ideogram 4, …).
     engine: str = "mflux"                   # "mflux" | "diffusers"
     # Optional explicit diffusers pipeline class name (e.g. "StableDiffusion3Pipeline"
     # or a custom "Ideogram4Pipeline"). None → AutoPipelineForText2Image resolves it.
@@ -414,18 +311,14 @@ class ModelEntry:
     download_allow_patterns: Optional[tuple[str, ...]] = None
     # ── Output-dimension capability (v1.15.0) ───────────────────────────────
     # Whether this model honors the requested width/height (i.e. the aspect-ratio
-    # presets do anything). False for fixed-output endpoints — Cloudflare's FLUX
-    # schnell and Gemini both ignore width/height and emit a model-chosen size.
-    # Exposed in the catalog so the UI hides the aspect picker and Story Studio
-    # knows not to offer ratios for these models.
+    # presets do anything). False for fixed-output models that ignore width/height
+    # and emit a model-chosen size. Exposed in the catalog so the UI hides the
+    # aspect picker and Story Studio knows not to offer ratios for these models.
     supports_custom_dimensions: bool = True
     # For fixed-output models (supports_custom_dimensions=False): the single real
     # output size the endpoint emits, used to build the one `sizes` entry. Defaults
     # to 1024×1024 when unset.
     fixed_size: Optional[tuple] = None
-    # True when the cloud model needs a BILLING-enabled account, not just a key
-    # (Gemini image gen: free-tier quota is 0). Surfaced as fit.state="needs_billing".
-    requires_billing: bool = False
     # A repository can contain MLX weights without using the on-disk format
     # expected by this app's mflux worker. Keep such models discoverable while
     # preventing a misleading "Engine ready" state and a guaranteed load crash.
@@ -444,10 +337,6 @@ class ModelEntry:
     @property
     def is_apple_optimized(self) -> bool:
         return self.quantization is not None and self.quantization.startswith("mlx")
-
-    @property
-    def is_cloud(self) -> bool:
-        return self.provider == "cloud"
 
     @property
     def is_diffusers(self) -> bool:
@@ -989,278 +878,6 @@ CATALOG: tuple[ModelEntry, ...] = (
             ("avoid", "Exact output sizing — currently a fixed ~2× upscale (no scale control in the UI yet)"),
         ),
     ),
-
-    # ──────────── Cloud providers (v1.5.0) — free, no local GPU ────────────
-    # These do NOT use mflux. provider="cloud" routes _dispatch_txt2img to the
-    # providers/ registry instead of a local inference class. `repo` is a
-    # synthetic stable id (never fetched from HF); /api/catalog synthesises a
-    # "cached" cache state so the UI shows them ready with no download button.
-    # Excluded from audit_truth.py (it audits mflux wiring only).
-    # NOTE: `repo` stays "pollinations/flux" as a stable id (consumers like Story
-    # Studio reference it), but Pollinations' free anonymous tier now serves only
-    # NVIDIA Sana — the `model` param is normalised to it regardless of value — so
-    # the label + cloud_model_id reflect that reality instead of claiming FLUX.
-    ModelEntry(
-        repo="pollinations/flux",
-        label="Pollinations (cloud, free — no key)",
-        family="pollinations",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs in the cloud. Works on any Mac; no GPU or download needed.",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="pollinations",
-        cloud_model_id="sana",
-        best_for="Zero-setup free image generation in the cloud — no download, no API key, no local GPU. Pollinations' free anonymous tier currently serves NVIDIA Sana, a fast and compact non-FLUX/SD model. Great for trying the app instantly or generating on a Mac that can't run the local MLX models. Your prompt is sent to Pollinations' servers.",
-        use_cases=(
-            ("good",  "Instant first generation — nothing to download, install, or sign up for"),
-            ("good",  "A free non-FLUX/SD model (NVIDIA Sana) with zero setup"),
-            ("good",  "Macs without the memory/GPU for local models (8 GB, Intel, etc.)"),
-            ("weak",  "Variable latency + rate limits — it's a free shared service"),
-            ("avoid", "Private or sensitive prompts — they leave your Mac for a 3rd-party server"),
-            ("avoid", "Reproducible/seed-locked pipelines — cloud output is best-effort, not deterministic"),
-        ),
-    ),
-    ModelEntry(
-        repo="cloudflare/flux-1-schnell",
-        label="FLUX.1 schnell — Cloudflare (cloud)",
-        family="cloudflare",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="cloudflare",
-        cloud_model_id="@cf/black-forest-labs/flux-1-schnell",
-        supports_custom_dimensions=False,  # Workers AI schnell ignores width/height
-        fixed_size=(1024, 1024),           # measured: emits 1024×1024 regardless of request
-        best_for="Free cloud FLUX.1 schnell on Cloudflare's edge — fast, with a real free-tier quota (10k neurons/day). Needs a free Cloudflare Account ID + API token. NOTE: this endpoint has a fixed output size and ignores the aspect-ratio control — for custom dimensions on Cloudflare, use SDXL, SDXL-Lightning, or Leonardo Lucid/Phoenix instead.",
-        use_cases=(
-            ("good",  "Free, fast schnell generation with a real free-tier quota"),
-            ("good",  "Macs without the GPU/memory for local FLUX"),
-            ("weak",  "Fixed output size — the schnell endpoint ignores width/height"),
-            ("weak",  "Requires a (free) Cloudflare Account ID + API token in Settings"),
-            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
-        ),
-    ),
-    ModelEntry(
-        repo="together/flux-1-schnell-free",
-        label="FLUX.1 schnell Free — Together (cloud)",
-        family="together",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Together AI. Needs a free Together API key (Settings).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="together",
-        cloud_model_id="black-forest-labs/FLUX.1-schnell-Free",
-        best_for="Together AI's free FLUX.1 [schnell] endpoint — honors width/height (so the aspect-ratio presets work), 4-step schnell. Needs a free Together API key. Pick this over Cloudflare when you want custom aspect ratios in the cloud.",
-        use_cases=(
-            ("good",  "Free schnell with custom width/height (aspect-ratio presets apply)"),
-            ("good",  "Macs without the GPU/memory for local FLUX"),
-            ("weak",  "Free endpoint caps at 4 steps"),
-            ("weak",  "Requires a (free) Together API key in Settings"),
-            ("avoid", "Private/sensitive prompts — they're sent to Together's servers"),
-        ),
-    ),
-    ModelEntry(
-        repo="gemini/gemini-2.5-flash-image",
-        label="Gemini 2.5 Flash Image — Google (needs billing)",
-        family="gemini",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Google. Needs a Google AI Studio API key WITH billing enabled (the free tier allows 0 image requests).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="gemini",
-        cloud_model_id="gemini-2.5-flash-image",
-        supports_custom_dimensions=False,  # Gemini chooses the output size
-        fixed_size=(1024, 1024),           # Nano Banana emits ~1024×1024
-        requires_billing=True,             # free-tier quota is 0 for image gen
-        best_for="Google's Gemini 2.5 Flash Image ('Nano Banana') — a different model family from FLUX/SD, strong at photorealism, text rendering, and following complex instructions. IMPORTANT: this is NOT free — Google's free tier allows 0 image-generation requests, so it needs a Google AI Studio / Cloud account with BILLING ENABLED. Output size is model-chosen (~1024px); width/height + seed are ignored.",
-        use_cases=(
-            ("good",  "A non-FLUX/SD look — photoreal scenes and legible text in images"),
-            ("good",  "Macs without the GPU/memory for local models"),
-            ("avoid", "Free-only setups — Gemini image gen requires billing enabled (free tier = 0 requests)"),
-            ("weak",  "Fixed model-chosen output size — width/height + seed are ignored"),
-            ("weak",  "Stricter content filters than the open FLUX/SD models"),
-            ("avoid", "Private/sensitive prompts — they're sent to Google's servers"),
-        ),
-    ),
-    ModelEntry(
-        repo="nebius/flux-dev",
-        label="FLUX.1 dev — Nebius (cloud)",
-        family="nebius",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Nebius. Needs a free Nebius API key with trial credits (Settings).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="nebius",
-        cloud_model_id="black-forest-labs/flux-dev",
-        best_for="FLUX.1 [dev] on Nebius AI Studio — the quality step up from the free schnell-only cloud options, honoring width/height. New accounts get free trial credits (no credit card). Pick this when you want the best cloud FLUX quality and don't mind that it draws from trial credit.",
-        use_cases=(
-            ("good",  "Higher-quality cloud FLUX (dev, not just distilled schnell)"),
-            ("good",  "Honors width/height — aspect-ratio presets apply"),
-            ("good",  "Macs without the GPU/memory for local FLUX"),
-            ("weak",  "Runs on trial credits, not an unlimited free tier — dev costs more credit/image than schnell"),
-            ("weak",  "Requires a (free) Nebius API key in Settings"),
-            ("avoid", "Private/sensitive prompts — they're sent to Nebius' servers"),
-        ),
-    ),
-    ModelEntry(
-        repo="huggingface/flux-1-schnell",
-        label="FLUX.1 schnell — Hugging Face (cloud)",
-        family="huggingface",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Hugging Face. Uses your HF token (with Inference Providers permission).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="huggingface",
-        cloud_model_id="black-forest-labs/FLUX.1-schnell",
-        best_for="FLUX.1 [schnell] via Hugging Face Inference Providers, using the SAME Hugging Face token you already set for downloads (it must have the 'Inference Providers' permission). The free monthly inference credit is small, so this is a bring-your-own-token convenience option rather than a heavy-use free tier.",
-        use_cases=(
-            ("good",  "Reuses your existing Hugging Face token — nothing new to sign up for"),
-            ("good",  "Honors width/height — aspect-ratio presets apply"),
-            ("weak",  "Free monthly inference credit is small — runs out quickly under heavy use"),
-            ("weak",  "Token must have the 'Inference Providers' permission (a download-only token gives a 403)"),
-            ("avoid", "Private/sensitive prompts — they're sent to Hugging Face's servers"),
-        ),
-    ),
-    # ── More free cloud models (v1.14.0) — variety beyond FLUX/SD ──
-    ModelEntry(
-        repo="cloudflare/leonardo-lucid-origin",
-        label="Leonardo Lucid Origin — Cloudflare (cloud)",
-        family="cloudflare",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="cloudflare",
-        cloud_model_id="@cf/leonardo/lucid-origin",
-        best_for="Leonardo's Lucid Origin on Cloudflare's free tier — a non-FLUX/SD model family known for sharp, photoreal results and strong prompt adherence. Honors width/height (up to 2500px). A genuinely different look from the FLUX/SD cloud options, with no signup beyond the Cloudflare key you already use.",
-        use_cases=(
-            ("good",  "A distinct, non-FLUX/SD look — photoreal, crisp detail"),
-            ("good",  "Free on Cloudflare's 10k-neuron/day quota; honors width/height"),
-            ("good",  "Macs without the GPU/memory for local models"),
-            ("weak",  "Shares the Cloudflare daily free quota with the other CF models"),
-            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
-        ),
-    ),
-    ModelEntry(
-        repo="cloudflare/leonardo-phoenix",
-        label="Leonardo Phoenix 1.0 — Cloudflare (cloud)",
-        family="cloudflare",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="cloudflare",
-        cloud_model_id="@cf/leonardo/phoenix-1.0",
-        best_for="Leonardo's Phoenix 1.0 on Cloudflare's free tier — a non-FLUX/SD model with excellent prompt adherence and coherent compositions, including legible in-image text. Honors width/height and a negative prompt. Pairs well with Lucid Origin for a different aesthetic from the FLUX/SD options.",
-        use_cases=(
-            ("good",  "Strong prompt adherence + coherent layouts (good with text in images)"),
-            ("good",  "Non-FLUX/SD family, free on Cloudflare; honors width/height + negative prompt"),
-            ("good",  "Macs without the GPU/memory for local models"),
-            ("weak",  "Shares the Cloudflare daily free quota with the other CF models"),
-            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
-        ),
-    ),
-    ModelEntry(
-        repo="cloudflare/sdxl-base",
-        label="Stable Diffusion XL 1.0 — Cloudflare (cloud)",
-        family="cloudflare",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="cloudflare",
-        cloud_model_id="@cf/stabilityai/stable-diffusion-xl-base-1.0",
-        best_for="Stable Diffusion XL 1.0 on Cloudflare's free tier — the classic SDXL base model, free, and (unlike the Cloudflare FLUX schnell endpoint) it honors width/height and a negative prompt. Good for SDXL-style results and custom aspect ratios in the cloud without a Together/Nebius key.",
-        use_cases=(
-            ("good",  "Free SDXL that honors width/height + negative prompt"),
-            ("good",  "Custom aspect ratios in the cloud without a Together/Nebius key"),
-            ("good",  "Macs without the GPU/memory for local models"),
-            ("weak",  "Classic SDXL — less sharp than FLUX/Leonardo on fine detail"),
-            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
-        ),
-    ),
-    ModelEntry(
-        repo="cloudflare/sdxl-lightning",
-        label="SDXL-Lightning — Cloudflare (cloud)",
-        family="cloudflare",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="cloudflare",
-        cloud_model_id="@cf/bytedance/stable-diffusion-xl-lightning",
-        best_for="ByteDance's SDXL-Lightning on Cloudflare's free tier — a distilled SDXL that produces images in just a few steps, so it's the fastest free Cloudflare option. Honors width/height. Great for rapid drafts and iterating on prompts.",
-        use_cases=(
-            ("good",  "Fastest free Cloudflare model — few-step distilled SDXL"),
-            ("good",  "Rapid drafting / prompt iteration; honors width/height"),
-            ("good",  "Macs without the GPU/memory for local models"),
-            ("weak",  "Few-step output trades some quality for speed"),
-            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
-        ),
-    ),
-    ModelEntry(
-        repo="cloudflare/dreamshaper-lcm",
-        label="DreamShaper 8 LCM — Cloudflare (cloud)",
-        family="cloudflare",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Cloudflare. Needs a free Cloudflare Account ID + API token (Settings).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="cloudflare",
-        cloud_model_id="@cf/lykon/dreamshaper-8-lcm",
-        best_for="Lykon's DreamShaper 8 (LCM) on Cloudflare's free tier — a popular Stable Diffusion 1.5 finetune with a stylized, illustrative, slightly painterly look. Fast (LCM, few steps) and honors width/height. A different aesthetic from the photoreal FLUX/SDXL/Leonardo options.",
-        use_cases=(
-            ("good",  "Stylized / illustrative / painterly look (SD 1.5 DreamShaper)"),
-            ("good",  "Fast few-step LCM; free on Cloudflare; honors width/height"),
-            ("weak",  "SD 1.5 base — lower native resolution/detail than SDXL/FLUX"),
-            ("avoid", "Photoreal or text-in-image needs — pick Leonardo/SDXL/FLUX instead"),
-            ("avoid", "Private/sensitive prompts — they're sent to Cloudflare's servers"),
-        ),
-    ),
-    ModelEntry(
-        repo="huggingface/sd3-medium",
-        label="Stable Diffusion 3 Medium — Hugging Face (cloud)",
-        family="huggingface",
-        size_gb=0.0,
-        gated=False,
-        min_unified_memory_gb=0,
-        recommended_hardware="None — runs on Hugging Face. Uses your HF token (with Inference Providers permission).",
-        capabilities=("txt2img",),
-        provider="cloud",
-        cloud_provider="huggingface",
-        cloud_model_id="stabilityai/stable-diffusion-3-medium-diffusers",
-        best_for="Stable Diffusion 3 Medium via Hugging Face Inference Providers, using the same HF token you set for downloads (it must have the 'Inference Providers' permission). SD3's architecture differs from SDXL — better text rendering and prompt adherence. Free on the small HF monthly credit, so best for light use.",
-        use_cases=(
-            ("good",  "SD3 (newer architecture than SDXL) — better text + prompt adherence"),
-            ("good",  "Reuses your existing Hugging Face token; honors width/height"),
-            ("weak",  "Free monthly HF inference credit is small — light use only"),
-            ("weak",  "Token must have the 'Inference Providers' permission (else a 403)"),
-            ("avoid", "Private/sensitive prompts — they're sent to Hugging Face's servers"),
-        ),
-    ),
 )
 
 
@@ -1335,49 +952,30 @@ def generation_profile(m: ModelEntry) -> dict:
         else:
             defaults.update(steps=25, guidance=9.0)
 
-    if m.is_cloud:
-        supports_negative = m.cloud_provider in {"huggingface", "nebius"}
-        if m.cloud_provider == "cloudflare":
-            model_id = (m.cloud_model_id or "").lower()
-            supports_negative = "flux" not in model_id and "lucid" not in model_id
-        controls = {
-            "prompt": True,
-            "aspect_ratio": m.supports_custom_dimensions,
-            "negative_prompt": supports_negative,
-            "steps": False,
-            "guidance": False,
-            "seed": m.cloud_provider != "gemini",
-            "batch": True,
-            "image_strength": False,
-            "runtime_quantization": False,
-            "loras": False,
-        }
-        summary = "Hosted model: only settings accepted by this provider are shown."
-    else:
-        controls = {
-            "prompt": not is_upscaler,
-            "aspect_ratio": m.supports_custom_dimensions and not is_upscaler,
-            "negative_prompt": not is_upscaler and not distilled,
-            "steps": not is_upscaler,
-            "guidance": not is_upscaler and not distilled,
-            "seed": not is_upscaler,
-            "batch": True,
-            # Qwen-Edit and FIBO-Edit accept a reference image but their
-            # installed mflux edit signatures do not accept image_strength.
-            "image_strength": (
-                not is_upscaler
-                and any(c in m.capabilities for c in ("img2img", "edit"))
-                and not (m.family == "qwen-edit" or (m.family == "fibo" and "edit" in m.capabilities))
-            ),
-            "runtime_quantization": m.engine == "mflux" and not m.is_apple_optimized and not is_upscaler,
-            "loras": m.family in {"flux2-klein", "flux1-schnell", "flux1-dev", "flux1-krea"},
-        }
-        summary = (
-            "Upscaler workflow: provide an image; generation tuning is handled by the model."
-            if is_upscaler else
-            ("Distilled model: its fast trained defaults are applied automatically."
-             if distilled else "Balanced defaults for this model family are applied automatically.")
-        )
+    controls = {
+        "prompt": not is_upscaler,
+        "aspect_ratio": m.supports_custom_dimensions and not is_upscaler,
+        "negative_prompt": not is_upscaler and not distilled,
+        "steps": not is_upscaler,
+        "guidance": not is_upscaler and not distilled,
+        "seed": not is_upscaler,
+        "batch": True,
+        # Qwen-Edit and FIBO-Edit accept a reference image but their
+        # installed mflux edit signatures do not accept image_strength.
+        "image_strength": (
+            not is_upscaler
+            and any(c in m.capabilities for c in ("img2img", "edit"))
+            and not (m.family == "qwen-edit" or (m.family == "fibo" and "edit" in m.capabilities))
+        ),
+        "runtime_quantization": m.engine == "mflux" and not m.is_apple_optimized and not is_upscaler,
+        "loras": m.family in {"flux2-klein", "flux1-schnell", "flux1-dev", "flux1-krea"},
+    }
+    summary = (
+        "Upscaler workflow: provide an image; generation tuning is handled by the model."
+        if is_upscaler else
+        ("Distilled model: its fast trained defaults are applied automatically."
+         if distilled else "Balanced defaults for this model family are applied automatically.")
+    )
 
     return {"controls": controls, "defaults": defaults, "summary": summary}
 
@@ -1390,50 +988,6 @@ def serialize_model(m: ModelEntry) -> dict:
         fit = system_info.fit_for(m.min_unified_memory_gb)
     except Exception:
         fit = None
-
-    # ── Cloud-credential readiness (v1.11.x) ────────────────────────────────
-    # A cloud model is only truly "ready" when its required API credential is
-    # configured. Local models need no cloud credential → always ok. For a
-    # keyed cloud model with the credential MISSING we (a) report
-    # cloud_credentials_ok=false (the machine-readable signal Story Studio and
-    # any other consumer gate on) and (b) override the hardware `fit` verdict to
-    # state="needs_key" so the existing fit chip surfaces it with no extra UI
-    # logic. Pollinations needs no key → always ok.
-    cloud_credentials_ok = True
-    cloud_provider_label = None
-    cloud_signup_url = None
-    if m.is_cloud:
-        try:
-            from . import settings
-            cloud_provider_label = settings.cloud_provider_label(m.cloud_provider)
-            cloud_signup_url = settings.cloud_signup_url(m.cloud_provider) or None
-            cloud_credentials_ok = settings.cloud_credentials_ok(m.cloud_provider)
-            if not cloud_credentials_ok:
-                fit = {
-                    "state": "needs_key",
-                    "label": "Needs API key",
-                    "hint": settings.cloud_credentials_hint(m.cloud_provider),
-                    "actual_gb": None,
-                    "required_gb": None,
-                }
-            elif m.requires_billing:
-                # Credential is set, but the provider needs a billing-enabled
-                # account (Gemini image gen: free-tier quota is 0). Surface it
-                # the same way as needs_key so the UI/Story Studio can gate it.
-                fit = {
-                    "state": "needs_billing",
-                    "label": "Needs billing",
-                    "hint": (
-                        "Requires billing enabled on your Google AI Studio / Cloud "
-                        "account — the free tier allows 0 image-generation requests."
-                    ),
-                    "actual_gb": None,
-                    "required_gb": None,
-                }
-        except Exception:
-            # If settings can't be read for any reason, fail safe to not-ready
-            # for keyed providers (so we never falsely claim ready).
-            cloud_credentials_ok = (m.cloud_provider == "pollinations")
 
     return {
         "repo": m.repo,
@@ -1452,28 +1006,14 @@ def serialize_model(m: ModelEntry) -> dict:
         # New in v1.1 — structured use cases + hardware fit verdict.
         "use_cases": [{"kind": k, "text": t} for k, t in m.use_cases],
         "fit": fit,   # {state, label, hint, actual_gb, required_gb} or None
-        # New in v1.5.0 — cloud-provider routing. Local models report
-        # provider="local" and null cloud_* fields.
+        # Every model in this catalog runs locally (v1.29.0 removed the cloud
+        # providers). Kept in the payload because downstream consumers (Story
+        # Studio, Studio Hub) read it; it is now always "local".
         "provider": m.provider,
-        "cloud_provider": m.cloud_provider,
-        "cloud_model_id": m.cloud_model_id,
-        "is_cloud": m.is_cloud,
-        # New (v1.11.x) — true when the model's required cloud credential is set.
-        # Always true for local models and Pollinations (no key needed); false
-        # for Cloudflare/Together when their key/token is absent. Downstream
-        # consumers (Story Studio) gate cloud-model readiness on this.
-        "cloud_credentials_ok": cloud_credentials_ok,
-        # New (v1.12.0) — provider display name ("Together AI") + the URL where a
-        # user gets the credential, so the UI can link straight from the
-        # "needs API key" state. Null for local models.
-        "cloud_provider_label": cloud_provider_label,
-        "cloud_signup_url": cloud_signup_url,
         # New (v1.15.0) — does the model honor width/height? False for fixed-size
-        # endpoints (Cloudflare FLUX schnell, Gemini). Story Studio + the UI use
-        # this to hide/disable the aspect-ratio picker. requires_billing flags a
-        # cloud model that needs a billing-enabled account, not just a key.
+        # endpoints. Story Studio + the UI use this to hide/disable the
+        # aspect-ratio picker.
         "supports_custom_dimensions": m.supports_custom_dimensions,
-        "requires_billing": m.requires_billing,
         # New (v1.17.0) — ready-to-use per-model size menu so clients (Story
         # Studio) drive aspect-ratio + resolution pickers with no pixel math.
         # `sizes`: [{aspect_ratio,label,width,height,tier,[default],[fixed]}]
