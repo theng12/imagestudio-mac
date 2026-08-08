@@ -80,7 +80,6 @@ class GenerationValidationTests(unittest.TestCase):
                 resolution="2K",
                 width=1280,
                 height=720,
-                is_cloud=False,
             )
         self.assertEqual(raised.exception.status_code, 422)
 

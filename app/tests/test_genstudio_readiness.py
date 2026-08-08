@@ -65,3 +65,46 @@ def test_inventory_marks_the_exact_cached_qualified_revision_ready():
     assert target["model_revision"] == RUNTIME_REVISION
     assert target["qualified_revision_match"] is True
     assert target["execution_ready"] is True
+
+
+def test_every_catalog_model_runs_locally_and_reports_a_real_cache_state():
+    """v1.29.0 removed the cloud providers.
+
+    Nothing in the catalog may claim a hosted provider, and no entry may be
+    published with a synthesised "cached" state — every row now carries the
+    real on-disk cache snapshot, so the Studio Hub's downloaded=true picker
+    only ever offers models that were actually fetched.
+    """
+    assert all(model.provider == "local" for model in catalog.CATALOG)
+
+    payload = get_catalog()
+    for model in payload["models"]:
+        assert model["provider"] == "local"
+        for removed in (
+            "is_cloud",
+            "cloud_provider",
+            "cloud_model_id",
+            "cloud_credentials_ok",
+            "cloud_provider_label",
+            "cloud_signup_url",
+            "requires_billing",
+        ):
+            assert removed not in model, f"{removed} still serialized for {model['repo']}"
+        assert model["cache"]["state"] in {"absent", "partial", "cached"}
+
+    assert not any(family.startswith(("pollinations", "cloudflare", "together",
+                                      "gemini", "nebius", "huggingface"))
+                   for family in payload["families"])
+
+
+def test_txt2img_rejects_a_repo_that_is_not_in_the_catalog():
+    """A stale client (or a history row naming a removed model) must get a clean
+    400 rather than a 500 — the removed cloud repo ids are the concrete case."""
+    client = TestClient(app, headers={"X-Studio-Token": FLEET_TOKEN})
+    for repo in ("pollinations/flux", "cloudflare/sdxl-base", "not/a-real-model"):
+        response = client.post(
+            "/api/generate/txt2img",
+            json={"repo": repo, "prompt": "a red apple", "width": 1024, "height": 1024},
+        )
+        assert response.status_code == 400, (repo, response.status_code, response.text)
+        assert "Unknown repo" in response.json()["detail"]

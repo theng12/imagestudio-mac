@@ -139,13 +139,6 @@ class PruneBody(BaseModel):
 
 class SettingsBody(BaseModel):
     hf_token: Optional[str] = None   # pass "" to clear; omit field to leave unchanged
-    # Cloud-provider credentials (v1.6.0). Same convention: "" clears, omit = unchanged.
-    cloudflare_account_id: Optional[str] = None
-    cloudflare_api_token: Optional[str] = None
-    together_api_key: Optional[str] = None
-    # v1.13.0 cloud providers.
-    gemini_api_key: Optional[str] = None
-    nebius_api_key: Optional[str] = None
 
 
 class AutoUpdateSettingsBody(BaseModel):
@@ -253,10 +246,10 @@ def _validate_generation_controls(
 
 def _validate_local_size_selection(
     *, repo: str, aspect_ratio: Optional[str], resolution: str,
-    width: int, height: int, is_cloud: bool,
+    width: int, height: int,
 ) -> None:
     """Reject a stale/unsupported local size instead of silently downgrading it."""
-    if is_cloud or not aspect_ratio:
+    if not aspect_ratio:
         return
     selected = next((p for p in _sizes.local_aspect_options() if p["ratio"] == aspect_ratio), None)
     if selected is None:
@@ -529,33 +522,20 @@ def get_catalog() -> dict:
     models = []
     for m in catalog.CATALOG:
         d = catalog.serialize_model(m)
-        if m.is_cloud:
-            # Cloud models have no HF download. Report a synthetic "cached"
-            # state — the frontend gates readiness + the Generate dropdown on
-            # state == "cached", so this makes them ready with no download UI.
-            d["cache"] = {
-                "repo": m.repo,
-                "state": "cached",
-                "path": None,
-                "bytes_complete": 0,
-                "bytes_incomplete": 0,
-            }
-            d["active_download"] = None
-        else:
-            cache_status = cache.status_snapshot(m.repo)
-            revision = cache.snapshot_revision(m.repo)
-            revision_match = not m.qualified_revision or revision == m.qualified_revision
-            d["cache"] = cache_status
-            d["model_revision"] = revision
-            d["qualified_revision_match"] = revision_match
-            d["execution_ready"] = bool(
-                gen_manager.is_available()
-                and cache_status["state"] == "cached"
-                and m.runtime_compatible
-                and revision_match
-            )
-            active = manager.active_for_repo(m.repo)
-            d["active_download"] = active.serialize() if active else None
+        cache_status = cache.status_snapshot(m.repo)
+        revision = cache.snapshot_revision(m.repo)
+        revision_match = not m.qualified_revision or revision == m.qualified_revision
+        d["cache"] = cache_status
+        d["model_revision"] = revision
+        d["qualified_revision_match"] = revision_match
+        d["execution_ready"] = bool(
+            gen_manager.is_available()
+            and cache_status["state"] == "cached"
+            and m.runtime_compatible
+            and revision_match
+        )
+        active = manager.active_for_repo(m.repo)
+        d["active_download"] = active.serialize() if active else None
         candidate = d.get("genstudio_candidate")
         if isinstance(candidate, dict):
             # Slots are a live, sanitized observation rather than part of the
@@ -772,11 +752,6 @@ def update_settings_endpoint(body: SettingsBody) -> dict:
     unchanged."""
     if body.hf_token is not None:
         app_settings.set_hf_token(body.hf_token)
-    for key in ("cloudflare_account_id", "cloudflare_api_token", "together_api_key",
-                "gemini_api_key", "nebius_api_key"):
-        val = getattr(body, key)
-        if val is not None:
-            app_settings.set_value(key, val.strip())
     return app_settings.serialize_public()
 
 
@@ -942,28 +917,22 @@ def start_txt2img(body: Txt2ImgBody) -> dict:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {body.repo}")
     _validate_local_size_selection(
         repo=body.repo, aspect_ratio=body.aspect_ratio, resolution=body.resolution,
-        width=body.width, height=body.height, is_cloud=model.is_cloud,
+        width=body.width, height=body.height,
     )
     if not model.runtime_compatible:
         raise HTTPException(status_code=409, detail=model.runtime_note or "This model conversion is not supported by the current worker.")
-    # Cloud models are an HTTP call — they need neither the local mflux engine
-    # nor a Hugging Face download, so skip both gates for them.
-    if not model.is_cloud:
-        if not gen_manager.is_available():
-            raise HTTPException(
-                status_code=503,
-                detail="Generation engine not installed. Run the 'Install Generation' menu item.",
-            )
-        if cache.cache_state(body.repo) != "cached":
-            raise HTTPException(
-                status_code=409,
-                detail=f"Model {body.repo} is not fully cached. Download it from the Models tab first.",
-            )
+    if not gen_manager.is_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Generation engine not installed. Run the 'Install Generation' menu item.",
+        )
+    if cache.cache_state(body.repo) != "cached":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Model {body.repo} is not fully cached. Download it from the Models tab first.",
+        )
 
-    actual_revision = (
-        _resolve_local_model_revision(body.repo, body.model_revision)
-        if not model.is_cloud else None
-    )
+    actual_revision = _resolve_local_model_revision(body.repo, body.model_revision)
 
     # Resolve LoRA names to absolute paths so the worker doesn't need to redo it.
     lora_paths: list[str] = []
@@ -1021,7 +990,7 @@ async def start_img2img(
         raise HTTPException(status_code=400, detail=f"Unknown repo: {repo}")
     _validate_local_size_selection(
         repo=repo, aspect_ratio=aspect_ratio, resolution=resolution,
-        width=width, height=height, is_cloud=model.is_cloud,
+        width=width, height=height,
     )
     if not model.runtime_compatible:
         raise HTTPException(status_code=409, detail=model.runtime_note or "This model conversion is not supported by the current worker.")
@@ -1104,7 +1073,7 @@ async def start_edit(
         raise HTTPException(status_code=400, detail=f"Unknown repo: {repo}")
     _validate_local_size_selection(
         repo=repo, aspect_ratio=aspect_ratio, resolution=resolution,
-        width=width, height=height, is_cloud=model.is_cloud,
+        width=width, height=height,
     )
     if not model.runtime_compatible:
         raise HTTPException(status_code=409, detail=model.runtime_note or "This model conversion is not supported by the current worker.")

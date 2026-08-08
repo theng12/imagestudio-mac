@@ -111,11 +111,6 @@ function studio() {
     _jobStatePrev: {},   // map jobId → previous state, used to detect transitions for toasts
 
     // ──────── Models-tab library filters ────────
-    // Models tab is split into two scopes: local (download + run on this Mac)
-    // and cloud (hosted API). The toggle picks which set of models — and which
-    // toolbar controls — are shown. Persisted across sessions.
-    modelScope: "local",          // "local" | "cloud"
-
     modelFilters: {
       search: "",
       families: new Set(),
@@ -164,20 +159,6 @@ function studio() {
       message:"", messageKind:"info",
     },
 
-    // ──────── cloud provider API keys (Settings tab) ────────
-    // Backing state for the keyed cloud providers (Cloudflare, Together).
-    // Pollinations needs no key, so it isn't represented here.
-    cloudKeys: {
-      cloudflare_account_id_set: false, cloudflare_account_id_masked: "",
-      cloudflare_api_token_set: false,  cloudflare_api_token_masked: "",
-      together_api_key_set: false,      together_api_key_masked: "",
-      gemini_api_key_set: false,        gemini_api_key_masked: "",
-      nebius_api_key_set: false,        nebius_api_key_masked: "",
-      cfAccount: "", cfToken: "", together: "", gemini: "", nebius: "",   // input fields (cleared after save)
-      showCfToken: false, showTogether: false, showGemini: false, showNebius: false,
-      busy: false, message: "", messageKind: "info",
-    },
-    focusedCloudProvider: "cloudflare",
 
     // ──────── network/connectivity (where the API can be reached) ────────
     conn: {
@@ -351,19 +332,17 @@ function studio() {
                          + (Number(m.size_gb) || 0) * 10
                          + (/recommended/i.test(m.label || "") ? 5 : 0);
       const pickHeavy = (predicate) => {
-        const c = (this.models || []).filter(m => !m.is_cloud && fits(m) && predicate(m));
+        const c = (this.models || []).filter(m => fits(m) && predicate(m));
         return c.length ? c.slice().sort((a, b) => heavy(b) - heavy(a))[0] : null;
       };
       const pickLight = (predicate) => {
-        const c = (this.models || []).filter(m => !m.is_cloud && fits(m) && predicate(m));
+        const c = (this.models || []).filter(m => fits(m) && predicate(m));
         // Lightest on-disk model = fastest to load / iterate with.
         return c.length ? c.slice().sort((a, b) => (Number(a.size_gb) || 0) - (Number(b.size_gb) || 0))[0] : null;
       };
       const hasCap = (m, cap) => (m.capabilities || []).includes(cap);
       const buckets = [
         { id: "quality", label: "Best quality",     icon: "🏆", model: pickHeavy(() => true) },
-        // Lightest LOCAL generator (exclude 0-size cloud entries so this lane
-        // recommends a real download you can iterate on, not a hosted API).
         { id: "fast",    label: "Fastest / lightest", icon: "⚡", model: pickLight(m => hasCap(m, "txt2img") && (Number(m.size_gb) || 0) > 0) },
         { id: "edit",    label: "Best for editing",  icon: "🎨", model: pickHeavy(m => hasCap(m, "edit") && (Number(m.size_gb) || 0) > 0) },
       ];
@@ -380,9 +359,6 @@ function studio() {
       const f = this.modelFilters;
       const q = (f.search || "").trim().toLowerCase();
       const matches = (m) => {
-        // Local/Cloud scope split (the Models tab toggle).
-        if (this.modelScope === "cloud" && !m.is_cloud) return false;
-        if (this.modelScope === "local" && m.is_cloud) return false;
         if (f.families.size > 0 && !f.families.has(m.family)) return false;
         if (f.statuses.size > 0) {
           const state = m.cache?.state || "absent";
@@ -396,24 +372,19 @@ function studio() {
             if (!caps.has(wanted)) return false;
           }
         }
-        // Hardware filters below only apply to LOCAL models (cloud models have
-        // no MLX/RAM-fit concept). Guarding by scope also prevents a persisted
-        // mlxOnly=true from wiping out the cloud tab.
-        if (this.modelScope === "local") {
-          // Apple Silicon (MLX) filter — only show pre-quantized MLX entries.
-          if (f.mlxOnly && !m.apple_optimized) return false;
-          // Fits my Mac filter — hide entries that would OOM/swap heavily.
-          // We exclude only "risky" (below floor); "tight" still shows since the
-          // user might consciously accept that trade-off. "unknown" also shows
-          // since we don't have evidence either way.
-          if (f.fitLevel && f.fitLevel !== "all") {
-            const st = this.fitFor(m.min_unified_memory_gb).state;
-            if (f.fitLevel === "ok"    && st !== "ok")    return false;
-            if (f.fitLevel === "tight" && st !== "tight") return false;
-            if (f.fitLevel === "over"  && st !== "risky") return false;
-          }
-          if (f.fitsMyMac && this.fitFor(m.min_unified_memory_gb).state === "risky") return false;
+        // Apple Silicon (MLX) filter — only show pre-quantized MLX entries.
+        if (f.mlxOnly && !m.apple_optimized) return false;
+        // Fits my Mac filter — hide entries that would OOM/swap heavily.
+        // We exclude only "risky" (below floor); "tight" still shows since the
+        // user might consciously accept that trade-off. "unknown" also shows
+        // since we don't have evidence either way.
+        if (f.fitLevel && f.fitLevel !== "all") {
+          const st = this.fitFor(m.min_unified_memory_gb).state;
+          if (f.fitLevel === "ok"    && st !== "ok")    return false;
+          if (f.fitLevel === "tight" && st !== "tight") return false;
+          if (f.fitLevel === "over"  && st !== "risky") return false;
         }
+        if (f.fitsMyMac && this.fitFor(m.min_unified_memory_gb).state === "risky") return false;
         if (q) {
           const hay = ((m.label || "") + " " + (m.family_label || "") + " "
             + (m.repo || "") + " " + (m.best_for || "")).toLowerCase();
@@ -437,18 +408,11 @@ function studio() {
       for (const fam of Object.keys(out)) out[fam].sort(cmp);
       return out;
     },
-    /** True when a model belongs to the currently-selected scope tab. */
-    inScope(m) {
-      return this.modelScope === "cloud" ? !!m.is_cloud : !m.is_cloud;
-    },
-    get localModelCount() { return this.models.filter(m => !m.is_cloud).length; },
-    get cloudModelCount() { return this.models.filter(m => m.is_cloud).length; },
-    /** Total models in the current scope (the "of N" denominator). */
-    get scopedModelCount() { return this.models.filter(m => this.inScope(m)).length; },
+    /** Total models in the catalog (the "of N" denominator). */
+    get scopedModelCount() { return this.models.length; },
     get availableCapabilities() {
       const set = new Set();
       for (const m of this.models) {
-        if (!this.inScope(m)) continue;
         for (const c of (m.capabilities || [])) set.add(c);
       }
       const order = { txt2img: 0, img2img: 1, edit: 2 };
@@ -458,7 +422,6 @@ function studio() {
       const seen = new Set();
       const out = [];
       for (const m of this.models) {
-        if (!this.inScope(m)) continue;
         if (seen.has(m.family)) continue;
         seen.add(m.family);
         out.push({ id: m.family, label: m.family_label || this.families?.[m.family]?.label || m.family });
@@ -473,8 +436,7 @@ function studio() {
         .filter(f => f.models.length > 0);
       const rank = (f) => {
         const cached = f.models.some(m => m.cache?.state === "cached") ? 0 : 1;
-        const fits = this.modelScope === "cloud"
-          || f.models.some(m => this.fitFor(m.min_unified_memory_gb).state !== "risky") ? 0 : 1;
+        const fits = f.models.some(m => this.fitFor(m.min_unified_memory_gb).state !== "risky") ? 0 : 1;
         return cached * 100 + fits * 10;
       };
       return families.sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
@@ -487,14 +449,12 @@ function studio() {
       return Array.from(caps);
     },
     familyRuntimeLabel(family) {
-      if (this.modelScope === "cloud") return "Hosted API";
       const engines = new Set((family.models || []).map(m => m.engine));
       if (engines.has("mflux") && engines.has("diffusers")) return "MLX + MPS";
       if (engines.has("diffusers")) return "PyTorch / MPS";
       return "Apple MLX";
     },
     familyMemoryLabel(family) {
-      if (this.modelScope === "cloud") return "No download";
       const floors = (family.models || []).map(m => Number(m.min_unified_memory_gb) || 0);
       return floors.length ? `from ${Math.min(...floors)} GB RAM` : "RAM varies";
     },
@@ -502,14 +462,13 @@ function studio() {
       return (family.models || []).filter(m => m.cache?.state === "cached").length;
     },
     isRecommendedFamily(family) {
-      return this.modelScope === "local" && !!this.bestPicks[0]
+      return !!this.bestPicks[0]
         && (family.models || []).some(m => m.repo === this.bestPicks[0].model.repo);
     },
     familyTone(family) {
       const caps = this.familyCapabilities(family);
       if (caps.includes("edit") && !caps.includes("txt2img")) return "tone-edit";
       if (caps.includes("img2img") && !caps.includes("txt2img")) return "tone-upscale";
-      if (this.modelScope === "cloud") return "tone-cloud";
       if ((family.models || []).some(m => m.engine === "diffusers")) return "tone-mps";
       return "tone-mlx";
     },
@@ -523,11 +482,9 @@ function studio() {
       return label || "Standard";
     },
     modelRuntimeLabel(model) {
-      if (model.is_cloud) return model.cloud_provider_label || "Cloud";
       return model.engine === "diffusers" ? "PyTorch / MPS" : "Apple MLX";
     },
     modelFormatLabel(model) {
-      if (model.is_cloud) return "Hosted";
       if (model.quantization === "mlx-2bit") return "Pre-quantized 2-bit";
       if (model.quantization === "mlx-4bit") return "Pre-quantized 4-bit";
       if (model.quantization === "mlx-8bit") return "Pre-quantized 8-bit";
@@ -616,7 +573,7 @@ function studio() {
         localStorage.setItem(`imagestudio.modelFilters.${name}`, String(value));
       } catch {}
     },
-    /** Restore durable scope/RAM preferences. Format filters intentionally do
+    /** Reset the non-durable library filters. Format filters intentionally do
      *  not persist: opening Models should never hide most of the catalog. */
     _initFilterPreferences() {
       try {
@@ -624,38 +581,20 @@ function studio() {
         this.modelFilters.fitsMyMac = false;
         localStorage.removeItem("imagestudio.modelFilters.mlxOnly");
         localStorage.removeItem("imagestudio.modelFilters.fitsMyMac");
-        const savedScope = localStorage.getItem("imagestudio.modelFilters.modelScope");
-        if (savedScope === "local" || savedScope === "cloud") {
-          this.modelScope = savedScope;
-        }
+        // v1.29.0 removed the Local/Cloud scope tabs; purge the stale preference.
+        localStorage.removeItem("imagestudio.modelFilters.modelScope");
       } catch {}
     },
     _initFamilyLibrary() {
       if (this.modelFilters.openFamilies.size > 0) return;
-      this._openBestFamilyForScope();
+      this._openBestFamily();
     },
-    _openBestFamilyForScope() {
-      const inScope = (this.models || []).filter(m => this.inScope(m));
-      const cached = inScope.find(m => m.cache?.state === "cached");
-      const fitting = inScope.find(m => this.modelScope === "cloud"
-        || this.fitFor(m.min_unified_memory_gb).state !== "risky");
-      const first = cached || fitting || inScope[0];
+    _openBestFamily() {
+      const all = this.models || [];
+      const cached = all.find(m => m.cache?.state === "cached");
+      const fitting = all.find(m => this.fitFor(m.min_unified_memory_gb).state !== "risky");
+      const first = cached || fitting || all[0];
       this.modelFilters.openFamilies = new Set(first ? [first.family] : []);
-    },
-    /** Switch the Models tab between Local and Cloud. Filters are scope-specific
-     *  (families/statuses/etc. only exist in one scope), so reset them on switch
-     *  to avoid landing on an accidentally-empty list. Search + sort persist. */
-    setModelScope(scope) {
-      if (scope !== "local" && scope !== "cloud") return;
-      if (this.modelScope === scope) return;
-      this.modelScope = scope;
-      this.modelFilters.families = new Set();
-      this.modelFilters.statuses = new Set();
-      this.modelFilters.capabilities = new Set();
-      this.modelFilters.mlxOnly = false;
-      this.modelFilters.fitLevel = "all";
-      this._persistFilterPref("modelScope", scope);
-      this._openBestFamilyForScope();
     },
     /** Per-card expand/collapse. Default state is collapsed (compact card);
      *  the user clicks "Show details" to reveal best_for + use_cases + saved-loc. */
@@ -743,12 +682,7 @@ function studio() {
 
     get selectedReadiness() {
       const m = this.selectedModel;
-      if (!m) return { state: "empty", label: "Choose a model", detail: "Download a model or choose a cloud option to begin." };
-      if (m.is_cloud) {
-        if (m.fit?.state === "needs_billing") return { state: "blocked", label: "Billing required", detail: m.fit.hint };
-        if (m.cloud_credentials_ok === false) return { state: "blocked", label: "API key required", detail: m.fit?.hint || "Add this provider in Settings." };
-        return { state: "ready", label: "Cloud ready", detail: "No local engine or model download is required." };
-      }
+      if (!m) return { state: "empty", label: "Choose a model", detail: "Download a model to begin." };
       if (m.runtime_compatible === false) {
         return { state: "blocked", label: "Conversion format unsupported", detail: m.runtime_note || "This model needs a compatible local loader." };
       }
@@ -770,7 +704,7 @@ function studio() {
      *  queue behind. Backend's _GEN_LOCK serializes execution. */
     get canSubmit() {
       if (!this.selectedModel) return false;
-      if (!this.selectedModel.is_cloud && !this.gen.available) return false;
+      if (!this.gen.available) return false;
       if (this.supportsControl("prompt") && !this.gen.prompt.trim()) return false;
       if (this.gen.submitting) return false;
       if (this.gen.repo && !this.isModelReady(this.gen.repo)) return false;
@@ -881,14 +815,6 @@ function studio() {
       if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
       return Math.floor(diff / 86400) + "d ago";
     },
-    /** Provider label for a cloud job, else the local engine label. */
-    jobProviderLabel(job) {
-      const repo = job?.params?.repo;
-      const m = (this.models || []).find(x => x.repo === repo);
-      if (m && m.runtime_compatible === false) return false;
-      if (m?.is_cloud) return m.cloud_provider_label || "cloud";
-      return null;
-    },
     get historyPageCount() {
       return Math.max(1, Math.ceil(this.historyJobs.length / this.historyPageSize));
     },
@@ -926,13 +852,6 @@ function studio() {
     },
     isModelReady(repo) {
       if (!repo) return false;
-      // Cloud models have no local engine — readiness = required credential set.
-      // The backend reports cloud_credentials_ok (false for Cloudflare/Together
-      // when their key/token is missing; always true for Pollinations + local).
-      const m = (this.models || []).find(x => x.repo === repo);
-      // Cloud: needs the credential set AND (for billing-gated models like Gemini)
-      // billing enabled — which surfaces as fit.state === 'needs_billing'.
-      if (m && m.is_cloud) return m.cloud_credentials_ok !== false && m.fit?.state !== 'needs_billing';
       const e = this.modelEngine(repo);
       if (!e) return true;   // unknown engine → assume ready; API will 503 if not
       return !!e.ready;
@@ -1270,11 +1189,6 @@ function studio() {
         const data = await r.json();
         this.settings.hf_token_set = !!data.hf_token_set;
         this.settings.hf_token_masked = data.hf_token_masked || "";
-        // Cloud provider key statuses (masked; never the raw values).
-        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key", "gemini_api_key", "nebius_api_key"]) {
-          this.cloudKeys[k + "_set"] = !!data[k + "_set"];
-          this.cloudKeys[k + "_masked"] = data[k + "_masked"] || "";
-        }
       } catch { /* keep last */ }
       // Connectivity panel is on the same tab — refresh it at the same time.
       await this.refreshConnectivity();
@@ -1403,79 +1317,6 @@ function studio() {
         this.autoUpdate.messageKind="success";
       } catch(e) { this.autoUpdate.message=String(e.message||e); this.autoUpdate.messageKind="error"; }
       finally { this.autoUpdate.busy=false; }
-    },
-
-    async saveCloudKeys() {
-      const body = {};
-      const cf = (this.cloudKeys.cfAccount || "").trim();
-      const cft = (this.cloudKeys.cfToken || "").trim();
-      const tg = (this.cloudKeys.together || "").trim();
-      const gm = (this.cloudKeys.gemini || "").trim();
-      const nb = (this.cloudKeys.nebius || "").trim();
-      if (cf)  body.cloudflare_account_id = cf;
-      if (cft) body.cloudflare_api_token = cft;
-      if (tg)  body.together_api_key = tg;
-      if (gm)  body.gemini_api_key = gm;
-      if (nb)  body.nebius_api_key = nb;
-      if (Object.keys(body).length === 0) {
-        this.cloudKeys.message = "Enter at least one key to save.";
-        this.cloudKeys.messageKind = "error";
-        return;
-      }
-      this.cloudKeys.busy = true;
-      this.cloudKeys.message = "";
-      try {
-        const r = await fetch("/api/settings", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
-        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key", "gemini_api_key", "nebius_api_key"]) {
-          this.cloudKeys[k + "_set"] = !!data[k + "_set"];
-          this.cloudKeys[k + "_masked"] = data[k + "_masked"] || "";
-        }
-        this.cloudKeys.cfAccount = ""; this.cloudKeys.cfToken = ""; this.cloudKeys.together = "";
-        this.cloudKeys.gemini = ""; this.cloudKeys.nebius = "";
-        this.cloudKeys.showCfToken = false; this.cloudKeys.showTogether = false;
-        this.cloudKeys.showGemini = false; this.cloudKeys.showNebius = false;
-        this.cloudKeys.message = "Saved. Cloud models using these providers can now generate.";
-        this.cloudKeys.messageKind = "success";
-        this.pushToast({ kind: "success", icon: "✓", title: "Cloud keys saved", body: "" });
-      } catch (e) {
-        this.cloudKeys.message = String(e.message || e);
-        this.cloudKeys.messageKind = "error";
-        this.pushToast({ kind: "error", icon: "✗", title: "Couldn't save cloud keys",
-          body: this.cloudKeys.message });
-      } finally {
-        this.cloudKeys.busy = false;
-      }
-    },
-
-    async clearCloudKeys() {
-      this.cloudKeys.busy = true;
-      this.cloudKeys.message = "";
-      try {
-        const r = await fetch("/api/settings", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ cloudflare_account_id: "", cloudflare_api_token: "", together_api_key: "", gemini_api_key: "", nebius_api_key: "" }),
-        });
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
-        for (const k of ["cloudflare_account_id", "cloudflare_api_token", "together_api_key", "gemini_api_key", "nebius_api_key"]) {
-          this.cloudKeys[k + "_set"] = !!data[k + "_set"];
-          this.cloudKeys[k + "_masked"] = data[k + "_masked"] || "";
-        }
-        this.cloudKeys.message = "Cleared all cloud provider keys.";
-        this.cloudKeys.messageKind = "info";
-      } catch (e) {
-        this.cloudKeys.message = String(e.message || e);
-        this.cloudKeys.messageKind = "error";
-      } finally {
-        this.cloudKeys.busy = false;
-      }
     },
 
     async refreshConnectivity() {
@@ -1940,7 +1781,7 @@ function studio() {
     },
 
     async submitGenerate() {
-      if (!this.selectedModel?.is_cloud && !this.gen.available) {
+      if (!this.gen.available) {
         this.pushToast({ kind: "warn", icon: "⚠", title: "Engine not installed",
           body: "Use Install engines in the readiness card." });
         return;
@@ -2441,8 +2282,6 @@ function studio() {
         tight:   "⚠ tight",
         risky:   "✗ may not fit",
         unknown: "? fit unknown",
-        needs_key: "🔑 needs key",   // cloud model whose API credential isn't set
-        needs_billing: "💳 needs billing",  // cloud model needing a paid account (Gemini)
       };
       return map[fit.state] || "";
     },

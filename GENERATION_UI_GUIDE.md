@@ -17,8 +17,8 @@ kept behind **Fine tune**.
 
 1. Add the model to `CATALOG` and set its real generation `capabilities`.
 2. Update `generation_profile()` when the model needs defaults or controls that
-   differ from its family or provider.
-3. Never expose a control that the worker or cloud provider ignores. The
+   differ from its family.
+3. Never expose a control that the worker ignores. The
    supported control keys are `prompt`, `aspect_ratio`, `negative_prompt`,
    `steps`, `guidance`, `seed`, `batch`, `image_strength`,
    `runtime_quantization`, and `loras`.
@@ -35,8 +35,7 @@ kept behind **Fine tune**.
 
 ## Readiness states
 
-- Cloud models depend on provider credentials, not the local generation stack.
-- Local models require a cached model, installed engine packages, and a wired
+- A model requires a cached download, installed engine packages, and a wired
   worker.
 - A package-complete family without a worker is **unavailable**, not broken.
 - The in-app installer is useful in service mode because the launcher sidebar
@@ -47,6 +46,6 @@ kept behind **Fine tune**.
 
 Run JavaScript syntax checking, Python compilation, `git diff --check`, and
 validate every serialized catalog model has `generation_profile`. In the live
-UI, test at least one distilled local model, one standard local model, one
-fixed-size cloud model, and one keyless cloud model. Confirm the mobile layout
-has no horizontal overflow and the browser console has no new errors.
+UI, test at least one distilled model and one standard model. Confirm the
+mobile layout has no horizontal overflow and the browser console has no new
+errors.
