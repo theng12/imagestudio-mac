@@ -26,3 +26,6 @@ QWEN.md
 # Per-machine launchd startup-service marker (install_service.sh)
 service/
 auto_update/
+
+# graphify knowledge-graph output (regenerate with /graphify)
+graphify-out/

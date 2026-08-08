@@ -8,6 +8,14 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.29.2] — 2026-08-09
+
+### Changed — generated architecture output stays local
+
+- Added `graphify-out/` to the ignored generated-data paths. Rebuilding the
+  repository knowledge graph no longer dirties a production checkout or risks
+  committing a disposable analysis artifact. Runtime behavior is unchanged.
+
 ## [1.29.1] — 2026-08-09
 
 ### Removed — unreachable model-family scaffolding
