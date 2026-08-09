@@ -440,9 +440,9 @@ button.ghost.danger:hover { background: #1a0e0e; }
   border-radius: 15px;
   background: color-mix(in srgb, var(--panel) 88%, transparent);
 }
-.readiness-orb { width: 11px; height: 11px; border-radius: 50%; background: #6ee7b7; box-shadow: 0 0 0 5px rgba(110,231,183,.09), 0 0 18px rgba(110,231,183,.45); }
-.readiness-install .readiness-orb { background: #f4b860; box-shadow: 0 0 0 5px rgba(244,184,96,.09); }
-.readiness-blocked .readiness-orb { background: #ff8a65; box-shadow: 0 0 0 5px rgba(255,138,101,.09); }
+.readiness-orb { width: 11px; height: 11px; border-radius: 50%; background: var(--ok); }
+.readiness-install .readiness-orb { background: var(--warn); }
+.readiness-blocked .readiness-orb { background: var(--bad); }
 .readiness-empty .readiness-orb { background: var(--muted); box-shadow: none; }
 .readiness-copy > span { display: block; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .readiness-copy strong { display: block; margin-top: 2px; font-size: 14px; }
@@ -456,9 +456,9 @@ button.ghost.danger:hover { background: #1a0e0e; }
 .readiness-technical > summary { cursor: pointer; width: fit-content; }
 .engine-chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .engine-chip-list > span { display: inline-flex; gap: 5px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 999px; }
-.engine-chip-list .ok b { color: #6ee7b7; }
-.engine-chip-list .pending b { color: #f4b860; }
-.engine-chip-list .bad b { color: #ff8a65; }
+.engine-chip-list .ok b { color: var(--ok); }
+.engine-chip-list .pending b { color: var(--warn); }
+.engine-chip-list .bad b { color: var(--bad); }
 
 .banner {
   border: 1px solid var(--border);
@@ -1211,7 +1211,7 @@ input.num-input-wide { width: 130px; }
 }
 .diag[open] > summary::before { transform: rotate(90deg); }
 .diag-summary-text { flex: 1; }
-.diag-warn { color: #ffb347; }
+.diag-warn { color: var(--warn); }
 .diag-body {
   padding: 0 16px 16px 16px;
   border-top: 1px solid var(--border, #2a2a32);
@@ -1242,27 +1242,27 @@ input.num-input-wide { width: 130px; }
   border-bottom: 1px solid color-mix(in srgb, var(--border, #2a2a32) 60%, transparent);
 }
 .diag-table td:first-child { width: 28px; }
-.diag-row-bad td { color: #ffb347; }
-.diag-row-bad code { color: #ff8a65; }
+.diag-row-bad td { color: var(--bad); }
+.diag-row-bad code { color: var(--bad); }
 .diag-version { font-family: ui-monospace, monospace; font-size: 0.9em; }
-.diag-ok { color: #6ee7b7; }
-.diag-bad { color: #ff8a65; }
+.diag-ok { color: var(--ok); }
+.diag-bad { color: var(--bad); }
 .diag-bad code { margin-right: 6px; }
 
 /* ──────── per-model engine-readiness chip + dep-warn banner ──────── */
 .chip.engine-ready {
-  background: color-mix(in srgb, #6ee7b7 18%, transparent);
-  border-color: color-mix(in srgb, #6ee7b7 40%, transparent);
-  color: #6ee7b7;
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+  color: var(--ok);
 }
 .chip.engine-missing {
-  background: color-mix(in srgb, #ff8a65 22%, transparent);
-  border-color: color-mix(in srgb, #ff8a65 50%, transparent);
-  color: #ff8a65;
+  background: color-mix(in srgb, var(--bad) 22%, transparent);
+  border-color: color-mix(in srgb, var(--bad) 50%, transparent);
+  color: var(--bad);
   cursor: pointer;
 }
 .chip.engine-missing:hover {
-  background: color-mix(in srgb, #ff8a65 32%, transparent);
+  background: color-mix(in srgb, var(--bad) 32%, transparent);
 }
 /* "Fixed output size" note shown in place of the aspect grid for models that
    ignore width/height. */
@@ -1279,9 +1279,9 @@ input.num-input-wide { width: 130px; }
   display: inline-block;
   padding: 1px 6px;
   margin: 0 4px 0 0;
-  background: color-mix(in srgb, #ff8a65 18%, transparent);
+  background: color-mix(in srgb, var(--bad) 18%, transparent);
   border-radius: 4px;
-  color: #ff8a65;
+  color: var(--bad);
   font-size: 0.9em;
 }
 
@@ -1310,12 +1310,12 @@ input.num-input-wide { width: 130px; }
 
 /* 3-state engine chip — pending (worker in roadmap) */
 .chip.engine-pending {
-  background: color-mix(in srgb, #fbbf24 18%, transparent);
-  border-color: color-mix(in srgb, #fbbf24 40%, transparent);
-  color: #fbbf24;
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  color: var(--warn);
 }
-.diag-row-pending td { color: #fbbf24; }
-.diag-pending { color: #fbbf24; }
+.diag-row-pending td { color: var(--warn); }
+.diag-pending { color: var(--warn); }
 .banner.info.dep-warn { margin-top: 12px; }
 
 
@@ -1376,8 +1376,8 @@ input.num-input-wide { width: 130px; }
   font-weight: 700;
 }
 .chip.filter-chip.status-cached.active {
-  background: color-mix(in srgb, #6ee7b7 45%, var(--surface, #18181d));
-  border-color: color-mix(in srgb, #6ee7b7 80%, transparent);
+  background: color-mix(in srgb, var(--ok) 45%, var(--surface, #18181d));
+  border-color: color-mix(in srgb, var(--ok) 80%, transparent);
   color: #ffffff;
 }
 .chip.filter-chip.status-ready.active {
@@ -1473,13 +1473,13 @@ input.num-input-wide { width: 130px; }
   border-radius: 8px;
 }
 .queue-row-running {
-  border-color: color-mix(in srgb, #6ee7b7 50%, transparent);
-  background: color-mix(in srgb, #6ee7b7 6%, var(--surface, #18181d));
+  border-color: color-mix(in srgb, var(--ok) 50%, transparent);
+  background: color-mix(in srgb, var(--ok) 6%, var(--surface, #18181d));
 }
 .queue-state-icon { width: 24px; text-align: center; font-size: 1.1em; }
 .queue-spinner {
   display: inline-block;
-  color: #6ee7b7;
+  color: var(--ok);
   animation: queue-pulse 1.2s ease-in-out infinite;
 }
 .queue-clock { color: var(--muted, #888); }
@@ -1496,7 +1496,7 @@ input.num-input-wide { width: 130px; }
   color: var(--text, #ddd);
 }
 .queue-row-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.queue-running-label { color: #6ee7b7; }
+.queue-running-label { color: var(--ok); }
 .queue-queued-label  { color: var(--muted, #888); }
 
 /* ──────── History pager + richer per-row metadata ──────── */
@@ -1614,9 +1614,9 @@ input.num-input-wide { width: 130px; }
   white-space: nowrap;
 }
 .ram-budget-pill.preview {
-  background: color-mix(in srgb, #fbbf24 14%, transparent);
-  border-color: color-mix(in srgb, #fbbf24 45%, transparent);
-  color: #fbbf24;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--warn);
 }
 .ram-slider-row {
   display: flex;
@@ -1734,19 +1734,19 @@ input.num-input-wide { width: 130px; }
 
 /* ─── Hardware-fit chips on each model card ─── */
 .chip.fit-ok {
-  background: color-mix(in srgb, #34d399 18%, transparent);
-  color: #34d399;
-  border-color: color-mix(in srgb, #34d399 40%, transparent);
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
 }
 .chip.fit-tight {
-  background: color-mix(in srgb, #fbbf24 18%, transparent);
-  color: #fbbf24;
-  border-color: color-mix(in srgb, #fbbf24 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
 }
 .chip.fit-risky {
-  background: color-mix(in srgb, #f87171 18%, transparent);
-  color: #f87171;
-  border-color: color-mix(in srgb, #f87171 40%, transparent);
+  background: color-mix(in srgb, var(--bad) 18%, transparent);
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 40%, transparent);
 }
 .chip.fit-unknown {
   background: color-mix(in srgb, #888 12%, transparent);
@@ -1774,13 +1774,13 @@ input.num-input-wide { width: 130px; }
   background: color-mix(in srgb, var(--surface-2, #1a1a1f) 50%, transparent);
 }
 .use-case-list li.use-case-good {
-  border-left: 2px solid color-mix(in srgb, #34d399 60%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--ok) 60%, transparent);
 }
 .use-case-list li.use-case-weak {
-  border-left: 2px solid color-mix(in srgb, #fbbf24 60%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--warn) 60%, transparent);
 }
 .use-case-list li.use-case-avoid {
-  border-left: 2px solid color-mix(in srgb, #f87171 60%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--bad) 60%, transparent);
 }
 .use-case-icon {
   flex-shrink: 0;
@@ -1795,8 +1795,8 @@ input.num-input-wide { width: 130px; }
   color: #ffffff;
 }
 .chip.filter-chip-fit.active {
-  background: color-mix(in srgb, #34d399 45%, var(--surface, #18181d));
-  border-color: color-mix(in srgb, #34d399 80%, transparent);
+  background: color-mix(in srgb, var(--ok) 45%, var(--surface, #18181d));
+  border-color: color-mix(in srgb, var(--ok) 80%, transparent);
   color: #ffffff;
 }
 .chip.filter-chip-fit[disabled] {
@@ -2153,9 +2153,9 @@ input.num-input-wide { width: 130px; }
   justify-content: center;
 }
 .chip.library-empty-chip {
-  background: color-mix(in srgb, #f87171 18%, var(--surface, #18181d));
-  border: 1px solid color-mix(in srgb, #f87171 40%, transparent);
-  color: #fca5a5;
+  background: color-mix(in srgb, var(--bad) 18%, var(--surface, #18181d));
+  border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent);
+  color: var(--bad);
   cursor: pointer;
   padding: 2px 8px;
   text-transform: none;
@@ -2165,8 +2165,8 @@ input.num-input-wide { width: 130px; }
   gap: 6px;
 }
 .chip.library-empty-chip:hover {
-  background: color-mix(in srgb, #f87171 28%, var(--surface, #18181d));
-  border-color: color-mix(in srgb, #f87171 60%, transparent);
+  background: color-mix(in srgb, var(--bad) 28%, var(--surface, #18181d));
+  border-color: color-mix(in srgb, var(--bad) 60%, transparent);
 }
 .library-empty-chip-x {
   opacity: 0.55;

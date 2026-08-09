@@ -8,6 +8,27 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.29.3] — 2026-08-09
+
+### Fixed — production UI and documentation consistency audit
+
+- The README now describes the 19 models that are actually selectable in the
+  local-only catalog. It no longer advertises removed FLUX.2-dev, Z-Image, or
+  Stable Diffusion 3.5 paths, and it now states the real memory defaults:
+  Memory Saver below 12 GB and Balanced on larger Macs.
+- Generation readiness, engine diagnostics, queue state, and hardware-fit
+  indicators now use the existing `--ok`, `--warn`, and `--bad` design tokens.
+  Their second hardcoded green/amber/red palette could make the same state look
+  different depending on which panel reported it. Decorative status glows were
+  removed while preserving color, text, and icons as redundant state cues.
+
+Checked and deliberately unchanged: download and catalog byte formatting already
+use decimal GB consistently; every model-card download passes through the same
+size/RAM confirmation; cancel and empty-state behavior is consistent; and the
+historical Z-Image failure in the service log belongs to a dispatch path removed
+in 1.29.1. Verification: `pip check`, `node --check app/frontend/app.js`, 101
+tests, and `audit_truth.py --strict` all pass.
+
 ## [1.29.2] — 2026-08-09
 
 ### Changed — generated architecture output stays local
