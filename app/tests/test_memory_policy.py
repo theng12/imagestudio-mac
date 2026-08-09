@@ -1,6 +1,4 @@
 from pathlib import Path
-from types import SimpleNamespace
-
 from fastapi.testclient import TestClient
 
 from backend import memory_policy
@@ -114,37 +112,15 @@ def test_memory_policy_api_and_frontend_contract(tmp_path, monkeypatch):
     assert PROCESS_TITLE == "Image Studio Mac"
 
 
-def test_shipped_default_actually_releases_on_idle(monkeypatch) -> None:
+def test_shipped_default_releases_after_each_job() -> None:
     """The idle-release thread ran on every fleet machine and did nothing,
     because the shipped default was "performance" (idle_seconds=None). Each
     Studio ships this same skeleton, so on a shared 8 GB Mac 3-5 of them each
     independently pinned a model forever: 16 of 19 machines could not start a
     job. A default that never releases is not a default."""
-    assert memory_policy.MODES[memory_policy.DEFAULT_MODE]["idle_seconds"] is not None
-    assert (
-        memory_policy.MODES[memory_policy.SMALL_MACHINE_DEFAULT_MODE]["idle_seconds"]
-        is not None
-    )
-
-    # Small machines get the tighter budget; roomy ones keep a model warm longer.
-    monkeypatch.setattr(
-        memory_policy, "_SMALL_MACHINE_GB", 12, raising=False
-    )
-    import psutil
-
-    monkeypatch.setattr(
-        psutil, "virtual_memory",
-        lambda: SimpleNamespace(total=int(8.6e9), available=int(4e9),
-                                used=int(4.6e9), percent=53.0),
-    )
-    assert memory_policy.default_mode() == "memory_saver"
-
-    monkeypatch.setattr(
-        psutil, "virtual_memory",
-        lambda: SimpleNamespace(total=int(25.8e9), available=int(18e9),
-                                used=int(7.8e9), percent=30.0),
-    )
-    assert memory_policy.default_mode() == "balanced"
+    assert memory_policy.DEFAULT_MODE == "immediate"
+    assert memory_policy.MODES[memory_policy.DEFAULT_MODE]["idle_seconds"] == 0
+    assert memory_policy.default_mode() == "immediate"
 
 
 def test_operator_choice_still_wins_over_the_machine_default(monkeypatch, tmp_path) -> None:
@@ -168,14 +144,7 @@ def test_ui_does_not_hardcode_performance_as_the_default() -> None:
 
 
 def test_psutil_is_a_declared_base_dependency() -> None:
-    """default_mode() imports psutil unconditionally on every install to size
-    the machine-aware default, but psutil previously lived only in
-    requirements-generation.lock.txt — the optional MLX/diffusers stack, not
-    the base install install.js actually runs. A base-only install would hit
-    the ImportError, which default_mode()'s bare except swallows, silently
-    falling back to DEFAULT_MODE regardless of host memory: exactly the wrong
-    direction on the small machines this default targets. Guards against that
-    dependency quietly drifting back out of the base files."""
+    """Health and generation telemetry need psutil on every installation."""
     root = Path(__file__).resolve().parents[1]
     requirements = (root / "requirements.txt").read_text(encoding="utf-8")
     lock = (root / "requirements.lock.txt").read_text(encoding="utf-8")

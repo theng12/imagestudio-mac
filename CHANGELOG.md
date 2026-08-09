@@ -8,6 +8,17 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.29.4] — 2026-08-09
+
+### Changed — new installs favor cross-Studio switching
+
+- Fresh installs now default to **Immediate** model-memory release. Existing
+  saved operator choices remain authoritative.
+- A controlled M1/M2/M4 fleet pressure run completed every Image and Voice job
+  with valid artifacts. On an M4 16 GB Mac, Immediate release left Image time
+  unchanged at about 72 seconds and reduced the following Voice job from 52.7
+  seconds to 4.0 seconds.
+
 ## [1.29.3] — 2026-08-09
 
 ### Fixed — production UI and documentation consistency audit
