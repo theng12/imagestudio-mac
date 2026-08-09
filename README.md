@@ -105,11 +105,11 @@ POST /api/storage-policy/cleanup  # optional { target_bytes }
 
 ## Model memory management
 
-Fresh installs choose a fleet-safe default from host memory: Macs below 12 GB
-use **Memory Saver** and release model memory after 2 idle minutes; larger Macs
-use **Balanced** and release after 10 minutes. An explicitly saved operator
-choice always wins. **Performance** keeps a model warm for fast repeat
-generation, while **Immediate** unloads after every completed job. **Release
+Fresh installs use **Immediate** and unload model memory after every completed
+job so the Mac is ready for another sibling Studio. An explicitly saved
+operator choice always wins. **Performance** keeps a model warm for fast repeat
+generation, **Balanced** releases after 10 idle minutes, and **Memory Saver**
+releases after 2 idle minutes. **Release
 Memory / Unload Model** runs the same cleanup manually. No release starts while
 generation is queued or running.
 
