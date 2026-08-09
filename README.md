@@ -10,21 +10,15 @@ and MLX.
 
 ## What it does today
 
-- Browse a curated catalog of FLUX-family models (FLUX.2 klein, FLUX.2 dev,
-  FLUX.1 schnell/dev/**Krea**, Kontext, Qwen-Image, FIBO, Z-Image, and
-  MLX-quantized variants), plus a **SeedVR2** image upscaler (in the
-  Image-to-Image tab).
+- Browse 19 local models across FLUX.2 Klein, FLUX.1 Schnell/Krea/Kontext,
+  Qwen-Image, FIBO, Sana, PixArt Sigma, Lumina 2, AuraFlow, SDXL, and a
+  **SeedVR2** image upscaler in the Image-to-Image tab.
 - **Two local engines.** Most models run on **mflux/MLX** (Apple-native, fast).
   A second **diffusers** engine (PyTorch/MPS) runs models mflux has no class for
-  — **Stable Diffusion 3.5 Large** (gated), **Sana 1600M** (ungated, the
-  easiest to try), and the **SDXL Lightning** pair (**Juggernaut XL** for
-  photoreal, **DreamShaper XL** for stylized/fantasy — both ungated, 4-7 steps,
-  and permissively licensed rather than non-commercial like the FLUX.1-dev
-  finetunes). Each model declares its `engine`; diffusers models behave like
-  any other local model in the UI but need the `torch`/`diffusers` deps (run
-  **Install Generation**). Note: **Ideogram 4 can't run on Apple MPS** — its
-  weights are fp8/nf4 (fp8 is an unsupported MPS dtype; nf4 needs CUDA-only
-  bitsandbytes) — so it's parked until mflux ships native MLX support.
+  — Sana, PixArt Sigma, Lumina 2, AuraFlow, and the SDXL family. Each model
+  declares its `engine`; Diffusers models behave like any other local model in
+  the UI but need the `torch`/`diffusers` dependencies from **Install
+  Generation**.
 - See at a glance which models are cached locally vs. need downloading.
 - Confirm-before-download dialog with on-disk size and unified-memory
   recommendations so you don't accidentally fetch 60 GB.
@@ -111,12 +105,13 @@ POST /api/storage-policy/cleanup  # optional { target_bytes }
 
 ## Model memory management
 
-Image Studio keeps loaded models warm by default so repeat generations start
-faster. Settings offers three opt-in alternatives: **Balanced** releases model
-memory after 10 idle minutes, **Memory Saver** after 2 idle minutes, and
-**Immediate** after every completed job. **Release Memory / Unload Model** runs
-the same cleanup manually. No release starts while generation is queued or
-running.
+Fresh installs choose a fleet-safe default from host memory: Macs below 12 GB
+use **Memory Saver** and release model memory after 2 idle minutes; larger Macs
+use **Balanced** and release after 10 minutes. An explicitly saved operator
+choice always wins. **Performance** keeps a model warm for fast repeat
+generation, while **Immediate** unloads after every completed job. **Release
+Memory / Unload Model** runs the same cleanup manually. No release starts while
+generation is queued or running.
 
 The cleanup removes cached model objects, runs Python garbage collection, and
 clears available MLX/Metal and PyTorch MPS allocator caches. It does not delete
