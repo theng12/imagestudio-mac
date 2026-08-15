@@ -8,6 +8,19 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.30.0] — 2026-08-15
+
+### Added — exact managed updater deployments
+
+- Authenticated Studio Hub requests can pin an update to one full commit SHA,
+  matching version, and operation ID. Image Studio verifies that commit is on
+  the expected `origin/main` history, fast-forwards only to it, and rejects a
+  mismatched release version.
+- A managed request survives an idle-work deferral and safely adopts repeated
+  deliveries of the same operation instead of spawning duplicate helpers.
+  Health now attests to the exact commit loaded by the running app before an
+  update reports success; updater status is bounded and redacts credentials.
+
 ## [1.29.4] — 2026-08-09
 
 ### Changed — new installs favor cross-Studio switching

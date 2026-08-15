@@ -76,6 +76,22 @@ def _read_app_version() -> str:
 APP_VERSION = _read_app_version()
 
 
+def _read_app_commit() -> str:
+    root = Path(__file__).resolve().parent.parent.parent
+    try:
+        result = subprocess.run(
+            ["/usr/bin/git", "rev-parse", "HEAD"], cwd=root, text=True,
+            capture_output=True, timeout=5, check=False,
+        )
+        commit = result.stdout.strip()
+        return commit if re.fullmatch(r"[0-9a-f]{40}", commit) else "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+APP_COMMIT = _read_app_commit()
+
+
 # ───────────── FastAPI setup ─────────────
 
 app = FastAPI(title="Image Studio KH", version="0.1.0")
@@ -150,6 +166,9 @@ class AutoUpdateSettingsBody(BaseModel):
 
 class AutoUpdateRequestBody(BaseModel):
     after_current: bool = False
+    target_commit: Optional[str] = None
+    target_version: Optional[str] = None
+    operation_id: Optional[str] = None
 
 
 class MemoryPolicyBody(BaseModel):
@@ -337,6 +356,7 @@ def health() -> dict:
         "ok": True,
         "version": app.version,
         "app_version": APP_VERSION,
+        "app_commit": APP_COMMIT,
         "hf_home": str(cache.hf_home()),
         "hub_dir": str(cache.hub_dir()),
         # Aggregate execution readiness only: no prompts, job ids, input paths,
@@ -491,7 +511,10 @@ def automatic_update_check() -> dict:
 @app.post("/api/auto-update/update")
 def automatic_update_run(body: AutoUpdateRequestBody) -> dict:
     try:
-        return auto_updater.trigger_update(after_current=body.after_current)
+        return auto_updater.trigger_update(after_current=body.after_current,
+                                           target_commit=body.target_commit,
+                                           target_version=body.target_version,
+                                           operation_id=body.operation_id)
     except UpdateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
