@@ -14,6 +14,17 @@ def test_health_attests_to_the_loaded_app_commit():
     assert re.fullmatch(r"[0-9a-f]{40}", response.json()["app_commit"])
 
 
+def test_auto_update_status_advertises_only_managed_exact_commit_capability():
+    client = TestClient(main.app, headers={"X-Studio-Token": main.FLEET_TOKEN})
+
+    response = client.get("/api/auto-update/status")
+
+    assert response.status_code == 200
+    capabilities = response.json()["capabilities"]
+    assert capabilities == {"managed_exact_commit": True}
+    assert "managed_exact_target" not in capabilities
+
+
 def test_managed_update_route_requires_auth_and_threads_full_tuple(monkeypatch):
     request = {
         "after_current": True,

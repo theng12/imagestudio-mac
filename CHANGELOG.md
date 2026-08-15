@@ -8,6 +8,14 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.30.1] — 2026-08-15
+
+### Fixed — managed updater capability contract
+
+- Updater status now advertises exact managed commits with the unambiguous
+  `managed_exact_commit` capability. The retired `managed_exact_target` key is
+  no longer emitted.
+
 ## [1.30.0] — 2026-08-15
 
 ### Added — exact managed updater deployments

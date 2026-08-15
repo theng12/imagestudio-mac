@@ -305,7 +305,7 @@ class AutoUpdater:
             "rollback": str(status.get("rollback") or "")[:32] or None,
             "pending_manual": bool(status.get("pending_manual")),
             "managed_update": self._active_managed_request(status),
-            "capabilities": {"managed_exact_target": True},
+            "capabilities": {"managed_exact_commit": True},
             "settings": settings,
             "installed_version": installed,
             "update_available": bool(latest and latest != installed),
