@@ -8,6 +8,18 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.30.2] — 2026-08-20
+
+### Fixed — service mode owns startup
+
+- Installing the Image Studio launchd service now atomically sets Pinokio's
+  `PINOKIO_SCRIPT_AUTOLAUNCH=start.js` and
+  `PINOKIO_SCRIPT_AUTOLAUNCH_ENABLED=false` settings after both launchd agents
+  bootstrap successfully, preventing Pinokio's autolaunch from competing with
+  the permanent service. It also clears stale `PINOKIO_SCRIPT_REQUIRES` data.
+  Re-running the install remains idempotent and preserves unrelated
+  `ENVIRONMENT` entries.
+
 ## [1.30.1] — 2026-08-15
 
 ### Fixed — managed updater capability contract

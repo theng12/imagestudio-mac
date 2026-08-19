@@ -16,6 +16,33 @@ WD="com.kh.imagestudio.watchdog"
 PORT=47868
 APPNAME="Image Studio KH"
 
+set_pinokio_autolaunch() {
+  local environment_file="$1"
+  local environment_tmp
+  environment_tmp="$(mktemp "${environment_file}.tmp.XXXXXX")"
+  if [ -f "$environment_file" ]; then
+    if ! awk '
+      $0 !~ /^PINOKIO_SCRIPT_AUTOLAUNCH=/ &&
+      $0 !~ /^PINOKIO_SCRIPT_AUTOLAUNCH_ENABLED=/ &&
+      $0 !~ /^PINOKIO_SCRIPT_REQUIRES=/ { print }
+    ' "$environment_file" > "$environment_tmp"; then
+      rm -f "$environment_tmp"
+      return 1
+    fi
+  fi
+  if ! printf '%s\n' \
+    "PINOKIO_SCRIPT_AUTOLAUNCH=start.js" \
+    "PINOKIO_SCRIPT_AUTOLAUNCH_ENABLED=false" \
+    "PINOKIO_SCRIPT_REQUIRES=" >> "$environment_tmp"; then
+    rm -f "$environment_tmp"
+    return 1
+  fi
+  if ! mv -f "$environment_tmp" "$environment_file"; then
+    rm -f "$environment_tmp"
+    return 1
+  fi
+}
+
 mkdir -p "$LA" "$ROOT/logs/service" "$ROOT/service"
 chmod +x "$ROOT/imagestudio-serve.sh" "$ROOT/imagestudio-watchdog.sh"
 
@@ -88,6 +115,9 @@ _bootstrap "$LA/$SRV.plist"
 _bootstrap "$LA/$WD.plist"
 launchctl kickstart "gui/$UID_NUM/$SRV" 2>/dev/null || true
 
+# Only hand startup ownership to the service after both agents loaded
+# successfully. If bootstrap fails, Pinokio autolaunch remains available.
+set_pinokio_autolaunch "$ROOT/ENVIRONMENT"
 touch "$ROOT/service/.installed"
 
 echo ""
