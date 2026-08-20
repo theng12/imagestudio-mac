@@ -11,12 +11,7 @@ module.exports = {
           "path": "{{path.resolve(cwd, 'conda_env')}}",
           "python": "python=3.12"
         },
-        message: [
-          "python -m pip install --upgrade pip",
-          // Install from the fully-pinned lock so a fresh machine gets the exact
-          // verified package set (see the lock's header for the upgrade flow).
-          "uv pip install -r requirements.lock.txt"
-        ]
+        message: ["python -m backend.dependency_convergence base"]
       }
     }
   ]

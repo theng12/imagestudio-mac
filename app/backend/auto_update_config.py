@@ -20,8 +20,6 @@ SPEC = {
     "default_hour": 4,
     "default_weekday": 6,
     "verify_module": "backend.main",
-    "generation_marker": "mflux",
-    "generation_requirements": "requirements-generation.lock.txt",
 }
 
 

@@ -80,11 +80,16 @@ def test_watchdog_success_resets_failure_streak(tmp_path: Path):
     assert not launches.exists()
 
 
-def test_all_generation_installers_use_the_qualified_lock():
+def test_generation_installers_route_through_the_qualified_lock_bridge():
     expected = "requirements-generation.lock.txt"
-    assert expected in (ROOT / "install_generation.js").read_text(encoding="utf-8")
-    assert expected in (ROOT / "update.js").read_text(encoding="utf-8")
-    assert expected in (ROOT / "app/backend/auto_update_config.py").read_text(encoding="utf-8")
+    bridge = (ROOT / "app/backend/dependency_convergence.py").read_text(encoding="utf-8")
+    assert expected in bridge
+    assert "python -m backend.dependency_convergence generation" in (
+        ROOT / "install_generation.js"
+    ).read_text(encoding="utf-8")
+    assert "python -m backend.dependency_convergence all-installed" in (
+        ROOT / "update.js"
+    ).read_text(encoding="utf-8")
     assert expected in (ROOT / "app/backend/generation_installer.py").read_text(encoding="utf-8")
 
 

@@ -1,16 +1,8 @@
 // One-click Update — correct in EVERY run mode (launchd service, start.js, or
 // stopped). Replaces the old split of "Update" vs "Update & Restart": one button
 // pulls the latest code, refreshes deps, and restarts whichever server this
-// machine actually runs.
-//
-// Why this exists: the old flow made users hunt several buttons and often left
-// production broken. "Update & Restart" was hardwired to stop/start start.js,
-// but in service mode the server IS the launchd service — so it stopped nothing
-// and then started a SECOND server that fought the service for the fixed port.
-// The restart here is service-aware and mutually exclusive: kickstart the
-// service, OR start start.js — never both. Base dependencies keep their
-// established update path; an existing generation environment is converged to
-// the complete, release-qualified generation lock.
+// machine actually runs. Dependencies converge through the repository-owned
+// bridge; an existing generation environment remains installed-only.
 module.exports = {
   run: [
     {
@@ -26,30 +18,14 @@ module.exports = {
       params: { message: "git pull" }
     },
     {
-      // Base deps (always).
+      // Base dependencies always converge; generation follows only when mflux
+      // is already installed in this active environment.
       when: "{{exists('conda_env')}}",
       method: "shell.run",
       params: {
         path: "app",
         conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
-        message: [
-          "python -m pip install --upgrade pip",
-          "uv pip install -r requirements.txt"
-        ]
-      }
-    },
-    {
-      // Generation deps — ONLY if generation is installed here. This is what
-      // makes an ML-dep bump land on the SAME Update click (no separate
-      // "Reinstall Generation").
-      when: "{{exists('conda_env/lib/python3.12/site-packages/mflux')}}",
-      method: "shell.run",
-      params: {
-        path: "app",
-        conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
-        message: [
-          "uv pip install -r requirements-generation.lock.txt"
-        ]
+        message: ["python -m backend.dependency_convergence all-installed"]
       }
     },
     {
@@ -67,20 +43,6 @@ module.exports = {
       when: "{{!exists('service/.installed')}}",
       method: "script.start",
       params: { uri: "start.js" }
-    },
-    {
-      // Verify generation still imports (if installed). A failure breaks the run
-      // here → the success notify is withheld and the terminal shows the error.
-      when: "{{exists('conda_env/lib/python3.12/site-packages/mflux')}}",
-      method: "shell.run",
-      params: {
-        path: "app",
-        conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
-        message: [
-          "python -c \"import mflux; print('GEN_VERIFY_OK')\" 2>&1"
-        ],
-        on: [{ event: "/(ModuleNotFoundError|ImportError|Traceback)/", break: true }]
-      }
     },
     {
       method: "notify",

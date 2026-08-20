@@ -14,14 +14,14 @@ def test_health_attests_to_the_loaded_app_commit():
     assert re.fullmatch(r"[0-9a-f]{40}", response.json()["app_commit"])
 
 
-def test_auto_update_status_advertises_only_managed_exact_commit_capability():
+def test_auto_update_status_advertises_bridge_capabilities():
     client = TestClient(main.app, headers={"X-Studio-Token": main.FLEET_TOKEN})
 
     response = client.get("/api/auto-update/status")
 
     assert response.status_code == 200
     capabilities = response.json()["capabilities"]
-    assert capabilities == {"managed_exact_commit": True}
+    assert capabilities == {"managed_exact_commit": True, "dependency_convergence": 1}
     assert "managed_exact_target" not in capabilities
 
 
