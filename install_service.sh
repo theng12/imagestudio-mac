@@ -16,6 +16,19 @@ WD="com.kh.imagestudio.watchdog"
 PORT=47868
 APPNAME="Image Studio KH"
 
+seed_environment() {
+  local template_file="$1"
+  local environment_file="$2"
+  if [ -e "$environment_file" ] || [ -L "$environment_file" ]; then
+    return 0
+  fi
+  if [ ! -f "$template_file" ]; then
+    echo "Missing environment template: $template_file" >&2
+    return 1
+  fi
+  cp "$template_file" "$environment_file"
+}
+
 set_pinokio_autolaunch() {
   local environment_file="$1"
   local environment_tmp
@@ -117,6 +130,7 @@ launchctl kickstart "gui/$UID_NUM/$SRV" 2>/dev/null || true
 
 # Only hand startup ownership to the service after both agents loaded
 # successfully. If bootstrap fails, Pinokio autolaunch remains available.
+seed_environment "$ROOT/ENVIRONMENT.example" "$ROOT/ENVIRONMENT"
 set_pinokio_autolaunch "$ROOT/ENVIRONMENT"
 touch "$ROOT/service/.installed"
 

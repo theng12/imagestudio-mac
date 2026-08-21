@@ -48,6 +48,18 @@ and MLX.
   release history in a modal without leaving Image Studio.
 - **Update / Reinstall / Reset** — standard launcher lifecycle.
 
+## Machine-local environment
+
+`ENVIRONMENT.example` is the tracked defaults template. Install, first start,
+and startup-service setup copy it to the ignored, machine-local `ENVIRONMENT`
+file only when that file is absent.
+Existing cache paths, sharing choices, and imported-model paths are preserved
+across installs, updates, and rollback. Startup-service setup normalizes only
+its three ownership keys. A rollback to a legacy release that tracked this file
+may leave the checkout dirty again, but retains the machine file unchanged for
+a later migration retry. To adopt a new default later, copy it deliberately
+rather than deleting your local settings.
+
 ## Importing your existing FLUX.1 schnell / dev
 
 You mentioned you have these downloaded elsewhere. Two ways to wire them in:
