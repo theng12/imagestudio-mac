@@ -8,6 +8,20 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.30.3] — 2026-08-20
+
+### Changed — dependency-neutral convergence bridge
+
+- Fresh install, Pinokio Update, automatic updates, and Install Generation now
+  converge their fixed dependencies through the same repository-owned command.
+  Optional generation remains installed-only: a normal update never creates the
+  generation stack or downloads a model on a machine that does not already have
+  it.
+- Automatic-update status now advertises `dependency_convergence: 1` alongside
+  `managed_exact_commit`, allowing future dependency-bearing releases to verify
+  bridge support before rollout. This bridge changes no dependency, model,
+  service mode, or live machine.
+
 ## [1.30.2] — 2026-08-20
 
 ### Fixed — service mode owns startup

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 from types import SimpleNamespace
+import inspect
 
 import pytest
 
@@ -57,6 +58,76 @@ def test_default_is_off_and_idle_only(updater: AutoUpdater):
         "idle_only": True, "weekday": 6,
     }
     assert updater.public_status()["scheduler"]["installed"] is False
+
+
+def test_status_advertises_exact_commit_and_dependency_convergence(updater: AutoUpdater):
+    assert updater.public_status()["capabilities"] == {
+        "managed_exact_commit": True,
+        "dependency_convergence": 1,
+    }
+
+
+def _worktree_spec(root: Path) -> dict:
+    return {
+        "root": str(root), "title": "Image Studio KH", "slug": "imagestudio-test",
+        "expected_remote": "https://github.com/theng12/imagestudio-mac.git",
+        "branch": "main", "port": 47868, "default_hour": 4,
+    }
+
+
+def test_real_linked_worktree_metadata_file_is_accepted(tmp_path: Path):
+    repository = tmp_path / "repository"
+    worktree = tmp_path / "linked-worktree"
+    subprocess.run(["git", "init", str(repository)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(repository), "config", "user.email", "test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(repository), "config", "user.name", "Test User"], check=True)
+    (repository / "README.md").write_text("test\n")
+    subprocess.run(["git", "-C", str(repository), "add", "README.md"], check=True)
+    subprocess.run(["git", "-C", str(repository), "commit", "-m", "initial"], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(repository), "worktree", "add", "-b", "linked", str(worktree), "HEAD"], check=True, capture_output=True, text=True)
+
+    assert (worktree / ".git").is_file()
+    assert AutoUpdater(_worktree_spec(worktree)).root == worktree
+
+
+def test_nonexistent_git_worktree_metadata_is_rejected(tmp_path: Path):
+    root = tmp_path / "imagestudio-mac"
+    root.mkdir()
+    (root / ".git").write_text("gitdir: /private/tmp/missing-worktree\n")
+
+    with pytest.raises(UpdateError, match="real Git checkout"):
+        AutoUpdater(_worktree_spec(root))
+
+
+def test_head_only_worktree_metadata_is_rejected(tmp_path: Path):
+    root = tmp_path / "imagestudio-mac"
+    root.mkdir()
+    gitdir = tmp_path / "imagestudio-worktree"
+    gitdir.mkdir()
+    (gitdir / "HEAD").write_text("ref: refs/heads/main\n")
+    (root / ".git").write_text("gitdir: ../imagestudio-worktree\n")
+
+    with pytest.raises(UpdateError, match="real Git checkout"):
+        AutoUpdater(_worktree_spec(root))
+
+
+@pytest.mark.parametrize("broken", ["backlink", "common"])
+def test_worktree_metadata_with_broken_administrative_links_is_rejected(tmp_path: Path, broken: str):
+    root = tmp_path / "imagestudio-mac"
+    root.mkdir()
+    gitdir = tmp_path / "imagestudio-worktree"
+    gitdir.mkdir()
+    common = tmp_path / "common-git"
+    common.mkdir()
+    (common / "config").write_text("[core]\n")
+    (common / "objects").mkdir()
+    (gitdir / "HEAD").write_text("ref: refs/heads/main\n")
+    (gitdir / "commondir").write_text("../missing-common\n" if broken == "common" else "../common-git\n")
+    (gitdir / "gitdir").write_text("../other/.git\n" if broken == "backlink" else "../imagestudio-mac/.git\n")
+    (root / ".git").write_text("gitdir: ../imagestudio-worktree\n")
+
+    with pytest.raises(UpdateError, match="real Git checkout"):
+        AutoUpdater(_worktree_spec(root))
 
 
 def test_settings_modes_install_and_remove_schedule(updater: AutoUpdater):
@@ -671,19 +742,10 @@ def test_service_and_pinokio_modes_restart_only_their_owner(updater: AutoUpdater
     assert calls == [("/bin/bash", "install_service.sh"), ("pterm", "start")]
 
 
-def test_generation_dependency_refresh_uses_qualified_lock(
+def test_dependency_refresh_uses_only_the_all_installed_bridge(
     updater: AutoUpdater, monkeypatch: pytest.MonkeyPatch
 ):
-    lock = updater.root / "app" / "requirements-generation.lock.txt"
-    lock.write_text("mflux==0.17.5\n")
-    marker = updater.root / "conda_env" / "lib" / "python3.12" / "site-packages" / "mflux"
-    marker.mkdir(parents=True)
-    updater.spec.update({
-        "generation_marker": "mflux",
-        "generation_requirements": "requirements-generation.lock.txt",
-    })
     calls = []
-    monkeypatch.setattr(updater, "_pinokio_home", lambda: updater.root.parent.parent)
     monkeypatch.setattr(
         updater,
         "_run",
@@ -693,13 +755,130 @@ def test_generation_dependency_refresh_uses_qualified_lock(
 
     updater._install_dependencies()
 
-    requirement_paths = [
-        call[call.index("-r") + 1]
-        for call in calls
-        if "-r" in call
+    assert calls == [[
+        str(updater.root / "conda_env" / "bin" / "python"),
+        "-m", "backend.dependency_convergence", "all-installed",
+    ]]
+    source = inspect.getsource(AutoUpdater._install_dependencies)
+    assert "pip install" not in source
+
+
+def test_convergence_subprocess_failure_marks_update_failed_and_rolls_back(
+    updater: AutoUpdater, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(updater, "readiness_reasons", lambda: [])
+    monkeypatch.setattr(updater, "active_mode", lambda: "stopped")
+    monkeypatch.setattr(updater, "_git_preflight", lambda **_kwargs: {
+        "local": "a" * 40, "remote": "b" * 40, "latest": "2.0.0", "available": True,
+    })
+    monkeypatch.setattr(updater, "_stop_mode", lambda _mode: None)
+    monkeypatch.setattr(updater, "_git", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(updater, "_verify_import", lambda _version: None)
+    monkeypatch.setattr(updater, "_start_mode", lambda _mode: None)
+    monkeypatch.setattr(updater, "_verify_health", lambda *_args: True)
+    expected = [
+        str(updater.root / "conda_env" / "bin" / "python"),
+        "-m", "backend.dependency_convergence", "all-installed",
     ]
-    assert str(lock) in requirement_paths
-    assert not any(path.endswith("requirements-generation.txt") for path in requirement_paths)
+    calls = []
+
+    def fail_convergence(args, **_kwargs):
+        calls.append(args)
+        if args == expected:
+            raise UpdateError("dependency convergence failed")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(updater, "_run", fail_convergence)
+    rollbacks = []
+    monkeypatch.setattr(updater, "_rollback", lambda *args: rollbacks.append(args) or True)
+
+    with pytest.raises(UpdateError, match="dependency convergence failed"):
+        updater.update()
+
+    assert calls == [expected]
+    assert rollbacks == [("a" * 40, "b" * 40, "stopped", "1.0.0")]
+    assert updater.public_status()["state"] == "failed"
+    assert updater.public_status()["rollback"] == "succeeded"
+
+
+@pytest.mark.parametrize(
+    ("bridge_present", "generation_present"),
+    [(False, False), (False, True), (True, False)],
+    ids=["pre-bridge-base", "pre-bridge-generation", "bridge"],
+)
+def test_rollback_restores_dependencies_from_the_checked_out_tree(
+    updater: AutoUpdater, monkeypatch: pytest.MonkeyPatch, bridge_present: bool,
+    generation_present: bool,
+):
+    old_sha = "a" * 40
+    new_sha = "b" * 40
+    bridge = updater.root / "app" / "backend" / "dependency_convergence.py"
+    bridge.parent.mkdir()
+    bridge.write_text("# bridge\n")
+    old_requirements = updater.root / "app" / "requirements.txt"
+    generation_requirements = updater.root / "app" / "requirements-generation.lock.txt"
+    if generation_present:
+        generation_requirements.write_text("mflux==0.17.5\n")
+        (updater.root / "conda_env" / "lib" / "python3.12" / "site-packages" / "mflux").mkdir(parents=True)
+    events = []
+    calls = []
+
+    def fake_git(*args, **_kwargs):
+        events.append(("git", args))
+        if args == ("rev-parse", "HEAD"):
+            return new_sha
+        if args == ("status", "--porcelain", "--untracked-files=normal"):
+            return ""
+        if args == ("read-tree", "--reset", "-u", old_sha):
+            old_requirements.write_text("old-fastapi\n")
+            if not bridge_present:
+                bridge.unlink()
+            return ""
+        if args == ("update-ref", "refs/heads/main", old_sha, new_sha):
+            return ""
+        raise AssertionError(args)
+
+    monkeypatch.setattr(updater, "_git", fake_git)
+    monkeypatch.setattr(updater, "_stop_mode", lambda mode: events.append(("stop", mode)))
+    monkeypatch.setattr(updater, "_verify_import", lambda version: events.append(("import", version)))
+    monkeypatch.setattr(updater, "_start_mode", lambda mode: events.append(("start", mode)))
+    monkeypatch.setattr(updater, "_verify_health", lambda *args: events.append(("health", args)) or True)
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        events.append(("run", tuple(args)))
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(updater, "_run", fake_run)
+
+    assert updater._rollback(old_sha, new_sha, "stopped", "1.0.0") is True
+
+    read_tree = events.index(("git", ("read-tree", "--reset", "-u", old_sha)))
+    first_install = next(index for index, event in enumerate(events) if event[0] == "run")
+    assert read_tree < first_install
+    if bridge_present:
+        assert calls == [(
+            [str(updater.root / "conda_env" / "bin" / "python"),
+             "-m", "backend.dependency_convergence", "all-installed"],
+            {"cwd": updater.root / "app", "timeout": 1800},
+        )]
+    else:
+        expected = [(
+            [str(updater.root / "conda_env" / "bin" / "python"), "-m", "pip", "install",
+             "-r", str(old_requirements)],
+            {"cwd": updater.root / "app", "timeout": 1800},
+        )]
+        if generation_present:
+            expected.extend([
+                ([str(updater.root / "conda_env" / "bin" / "python"), "-m", "pip", "install",
+                  "-r", str(generation_requirements)],
+                 {"cwd": updater.root / "app", "timeout": 1800}),
+                ([str(updater.root / "conda_env" / "bin" / "python"), "-c",
+                  "import mflux; print('GEN_VERIFY_OK')"],
+                 {"cwd": updater.root / "app", "timeout": 1800}),
+            ])
+        assert calls == expected
+    assert events[-3:] == [("import", "1.0.0"), ("start", "stopped"),
+                            ("health", ("stopped", "1.0.0", old_sha))]
 
 
 def test_secrets_are_redacted():

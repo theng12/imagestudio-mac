@@ -1,15 +1,8 @@
 // Heavy install: adds the generation stack to the existing conda_env. Required
 // for any generation endpoint to work. Safe to run more than once.
 //
-// QUALIFIED LOCK: install the complete, checked-in generation lock so every Mac
-// receives the same MLX/mflux/Diffusers runtime that passed release testing.
-// The lock includes both base and generation packages and is regenerated only
-// after the range requirements have been deliberately upgraded and qualified.
-//
-// VERIFY-THEN-NOTIFY: after installing we import the key modules. A failure
-// prints a traceback, the matcher breaks the run, and the success notify never
-// fires. The old script fired it unconditionally — telling users it worked even
-// on total failure.
+// The repository-owned convergence command installs the qualified generation
+// lock and verifies mflux before this script can notify success.
 //
 // Restart flow: stop the server first so its Python re-imports the freshly
 // installed packages, then restart whichever server this machine runs (launchd
@@ -29,20 +22,7 @@ module.exports = {
       params: {
         path: "app",
         conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
-        message: [
-          "uv pip install -r requirements-generation.lock.txt"
-        ]
-      }
-    },
-    {
-      method: "shell.run",
-      params: {
-        path: "app",
-        conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
-        message: [
-          "python -c \"import mflux; print('GEN_VERIFY_OK')\" 2>&1"
-        ],
-        on: [{ event: "/(ModuleNotFoundError|ImportError|Traceback)/", break: true }]
+        message: ["python -m backend.dependency_convergence generation"]
       }
     },
     {
