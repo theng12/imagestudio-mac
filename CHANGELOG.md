@@ -8,6 +8,23 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.30.4] — 2026-08-21
+
+### Fixed — machine-local runtime settings no longer block updates
+
+- The tracked defaults now live in `ENVIRONMENT.example`; install, first start,
+  and startup-service setup seed the ignored machine-local `ENVIRONMENT` only
+  when it is absent. Existing operator choices remain intact; service setup
+  normalizes only its three startup-ownership keys.
+- Automatic-update dirty-path messages now preserve Git's porcelain status
+  columns, so a modified `ENVIRONMENT` is named correctly instead of losing its
+  first character.
+- Rollback across the one-time tracked-template boundary now moves the local
+  `ENVIRONMENT` aside and restores it atomically, preserving its exact bytes and
+  mode. A legacy rollback can therefore be dirty again, but machine settings
+  remain data-safe for a later migration retry. Dependency convergence, models,
+  and service ownership behavior are otherwise unchanged.
+
 ## [1.30.3] — 2026-08-20
 
 ### Changed — dependency-neutral convergence bridge

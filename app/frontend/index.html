@@ -1547,6 +1547,7 @@
         <div><span class="models-eyebrow">Release notes</span><h2 id="whats-new-title">What's New</h2><p class="muted" x-text="releaseNotes.length ? 'Installed version: v' + releaseNotesCurrent : 'Loading release notes…'"></p></div>
         <button class="ghost" @click="showWhatsNew=false" aria-label="Close release notes">Close</button>
       </div>
+      <p class="muted" x-show="releaseNotesCurrent==='1.30.4'">Machine settings now live in an ignored ENVIRONMENT file seeded only when missing, so updates and rollback preserve each Mac's choices.</p>
       <template x-if="!releaseNotes.length"><p class="release-empty">Release details are loading. If this stays empty, the installed changelog is unavailable.</p></template>
       <template x-for="release in releaseNotes" :key="release.version + release.heading">
         <article class="release-entry">
