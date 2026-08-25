@@ -3,7 +3,9 @@ from __future__ import annotations
 import datetime as dt
 from concurrent.futures import ThreadPoolExecutor
 import os
+import plistlib
 from pathlib import Path
+import shlex
 import stat
 import subprocess
 import sys
@@ -209,6 +211,74 @@ def test_invalid_settings_are_rejected(updater: AutoUpdater):
     with pytest.raises(UpdateError):
         updater.save_settings({"mode": "auto", "frequency": "daily",
                                "maintenance_hour": 24, "idle_only": True})
+
+
+def test_scheduler_uses_named_wrapper_and_removes_it_when_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    root = tmp_path / "image studio-mac"
+    (root / ".git").mkdir(parents=True)
+    (root / "app").mkdir()
+    (root / "conda_env" / "bin").mkdir(parents=True)
+    python = root / "conda_env" / "bin" / "python"
+    python.symlink_to(sys.executable)
+    spec = {
+        "root": str(root), "title": "Image Studio KH", "slug": "imagestudio-test",
+        "expected_remote": "https://github.com/theng12/imagestudio-mac.git",
+        "branch": "main", "port": 47868, "default_hour": 4,
+    }
+    calls = []
+    installed = False
+
+    def runner(args, **_kwargs):
+        nonlocal installed
+        calls.append(args)
+        if args[1] == "bootout":
+            installed = False
+        elif args[1] == "bootstrap":
+            installed = True
+        return subprocess.CompletedProcess(args, 0 if installed or args[1] != "print" else 1, "", "")
+
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
+    monkeypatch.setattr("backend.auto_update.sys.platform", "darwin")
+    updater = AutoUpdater(spec, runner=runner)
+    monkeypatch.setattr(updater, "_pinokio_home", lambda: tmp_path)
+
+    updater.save_settings({
+        "mode": "auto", "frequency": "daily", "maintenance_hour": 4,
+        "idle_only": True,
+    })
+
+    wrapper = root / "auto_update" / "imagestudio-test-updater.sh"
+    plist = home / "Library" / "LaunchAgents" / "com.kh.imagestudio-test.updater.plist"
+    assert wrapper.is_file()
+    assert stat.S_IMODE(wrapper.stat().st_mode) == 0o700
+    assert wrapper.read_text(encoding="utf-8") == (
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(str(python))} -m backend.auto_update --scheduled\n"
+    )
+    payload = plistlib.loads(plist.read_bytes())
+    assert payload["ProgramArguments"] == [str(wrapper)]
+
+    updater.save_settings({
+        "mode": "off", "frequency": "daily", "maintenance_hour": 4,
+        "idle_only": True,
+    })
+    assert not wrapper.exists()
+    assert not plist.exists()
+
+
+def test_scheduler_reconciliation_does_not_run_while_update_lock_is_held(
+    updater: AutoUpdater, monkeypatch: pytest.MonkeyPatch,
+):
+    calls = []
+    monkeypatch.setattr(updater, "apply_scheduler", lambda: calls.append("bootout"))
+
+    with updater._exclusive_lock():
+        assert updater.apply_scheduler_if_idle() is False
+
+    assert calls == []
 
 
 def test_notify_only_checks_but_does_not_install(updater: AutoUpdater, monkeypatch):
