@@ -235,6 +235,8 @@ No deps beyond stdlib — runs without the venv.
 GET  /api/health
 GET  /api/catalog                  # models + families + live cache state
 GET  /api/fleet/activity           # authenticated, sanitized activity for Studio Hub only
+GET  /api/fleet/jobs/{job_id}/details       # authenticated, on-demand job content
+GET  /api/fleet/jobs/{job_id}/media/{handle} # authenticated, short-lived media read
 GET  /api/cache/{owner}/{name}     # one repo's cache state
 GET  /api/downloads                # list jobs
 POST /api/downloads                # { repo, token? }   start a download
@@ -251,6 +253,35 @@ where available. It never returns prompts, filesystem paths, assets,
 credentials, or reference media. Older Studios remain compatible but can
 appear as partial or unknown activity until updated; this release adds no
 dependency, model, port, or service, so ordinary **Update** is sufficient.
+
+### On-demand fleet job details
+
+The owner selects **View details** in Studio Hub before it requests sensitive
+job content. Normal activity polling remains content-free: it never returns
+prompts, filesystem paths, media, handles, credentials, or complete parameter
+maps. The detail route returns only allowlisted user-facing fields and
+server-derived origin evidence. Reference/output entries contain opaque,
+path-free handles; they are authenticated, bound to the exact job and media
+item, and expire after five minutes. Studio Hub does not extend this Mac's
+local job or output retention, so a pruned job or file remains unavailable.
+
+```sh
+STUDIO_URL=http://<server>:<port>
+STUDIO_TOKEN='existing-fleet-token'
+JOB_ID='job-id-from-activity'
+
+# Fetch details only after the owner has selected View details.
+curl --fail \
+  -H "X-Studio-Token: $STUDIO_TOKEN" \
+  "$STUDIO_URL/api/fleet/jobs/$JOB_ID/details" | jq .
+
+# Use an opaque handle returned in that detail response; never supply a path.
+curl --fail --output image.png \
+  -H "X-Studio-Token: $STUDIO_TOKEN" \
+  "$STUDIO_URL/api/fleet/jobs/$JOB_ID/media/<opaque-handle>"
+```
+
+This feature changes no dependency, model, installation flow, or launcher.
 
 ### Curl examples
 
