@@ -48,7 +48,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from . import cache, catalog, generation_installer, loras, memory_policy, settings as app_settings, sizes as _sizes, storage_policy
+from . import cache, catalog, fleet_auth, generation_installer, loras, memory_policy, settings as app_settings, sizes as _sizes, storage_policy
 from .downloads import manager
 from .generation import manager as gen_manager, diagnostics as gen_diagnostics
 from .generation import OUTPUT_DIR
@@ -966,7 +966,7 @@ def install_generation_dependencies(request: Request) -> dict:
 
 
 @app.post("/api/generate/txt2img")
-def start_txt2img(body: Txt2ImgBody) -> dict:
+def start_txt2img(body: Txt2ImgBody, request: Request) -> dict:
     _validate_generation_controls(
         prompt=body.prompt, width=body.width, height=body.height,
         steps=body.steps, guidance=body.guidance, seed=body.seed,
@@ -1006,12 +1006,14 @@ def start_txt2img(body: Txt2ImgBody) -> dict:
     params = body.model_dump()
     params["model_revision"] = actual_revision
     params["lora_paths"] = lora_paths
-    job = gen_manager.start_txt2img(params)
+    origin, origin_device = fleet_auth.classify_job_origin(request)
+    job = gen_manager.start_txt2img(params, origin=origin, origin_device=origin_device)
     return {"job": job.serialize()}
 
 
 @app.post("/api/generate/img2img")
 async def start_img2img(
+    request: Request,
     image: UploadFile = File(...),
     repo: str = Form(...),
     prompt: str = Form(...),
@@ -1092,12 +1094,14 @@ async def start_img2img(
         "lora_paths": lora_paths,
         "model_revision": actual_revision,
     }
-    job = gen_manager.start_img2img(params)
+    origin, origin_device = fleet_auth.classify_job_origin(request)
+    job = gen_manager.start_img2img(params, origin=origin, origin_device=origin_device)
     return {"job": job.serialize()}
 
 
 @app.post("/api/generate/edit")
 async def start_edit(
+    request: Request,
     image: UploadFile = File(...),
     repo: str = Form(...),
     prompt: str = Form(...),
@@ -1175,7 +1179,8 @@ async def start_edit(
         "lora_paths": lora_paths,
         "model_revision": actual_revision,
     }
-    job = gen_manager.start_edit(params)
+    origin, origin_device = fleet_auth.classify_job_origin(request)
+    job = gen_manager.start_edit(params, origin=origin, origin_device=origin_device)
     return {"job": job.serialize()}
 
 

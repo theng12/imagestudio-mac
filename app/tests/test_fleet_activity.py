@@ -99,7 +99,7 @@ def test_activity_snapshot_exposes_only_active_and_latest_safe_evidence():
     manager._jobs = {
         "run": GenerationJob(
             "run", "txt2img", {"repo": "org/model", "prompt": "secret"},
-            state="running", progress=0.4, started_at=20.0,
+            state="running", progress=0.4, started_at=20.0, origin="local_ui",
         ),
         "done": GenerationJob(
             "done", "txt2img", {"repo": "org/model", "prompt": "secret"},
@@ -116,6 +116,8 @@ def test_activity_snapshot_exposes_only_active_and_latest_safe_evidence():
     assert result["active"]["id"] == "run"
     assert result["active"]["model"] == "org/model"
     assert result["active"]["source"] == "direct"
+    assert result["active"]["origin"] == "local_ui"
+    assert result["active"]["origin_device"] is None
     assert result["latest"]["id"] == "done"
     assert result["latest"]["runtime_s"] == 5.0
     assert result["latest"]["source"] == "direct"
@@ -150,11 +152,33 @@ def test_activity_snapshot_clamps_progress_and_uses_terminal_timestamps():
         "finished_at": 30.0,
         "runtime_s": 10.0,
         "source": "direct",
+        "origin": "unknown",
+        "origin_device": None,
         "error": None,
     }
     assert result["latest"]["error"] is None
     assert result["latest"]["created_at"] is not None
     assert "old/model" not in json.dumps(result)
+
+
+def test_activity_snapshot_defaults_legacy_history_provenance_to_unknown():
+    job = GenerationManager._from_disk({
+        "job_id": "legacy",
+        "mode": "txt2img",
+        "params": {"repo": "legacy/model", "prompt": "private"},
+        "state": "done",
+        "progress": 1.0,
+        "created_at": 10.0,
+        "started_at": 11.0,
+        "finished_at": 12.0,
+    })
+    assert job is not None
+
+    result = GenerationManager._activity_projection(job, observed_at=20.0)
+
+    assert result["origin"] == "unknown"
+    assert result["origin_device"] is None
+    assert "private" not in repr(result)
 
 
 def test_activity_route_is_authenticated_and_returns_sanitized_snapshot(monkeypatch):

@@ -253,6 +253,16 @@ def aspect_options() -> list[dict]:
 
 # ───────────── job model ─────────────
 
+
+def _origin(value: object) -> str:
+    return value if value in {"hub", "local_ui", "api", "unknown"} else "unknown"
+
+
+def _origin_device(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text[:160] or None
+
+
 @dataclass
 class GenerationJob:
     job_id: str
@@ -268,6 +278,8 @@ class GenerationJob:
     runtime_revision: Optional[str] = None
     worker_id: Optional[str] = None
     machine_id: Optional[str] = None
+    origin: str = "unknown"
+    origin_device: Optional[str] = None
     asset_evidence: dict = field(default_factory=dict)
     resource_telemetry: Optional[dict] = None
     resource_memory_failure: bool = False
@@ -403,6 +415,8 @@ class GenerationManager:
             "created_at": cls._activity_created_at(job),
             "started_at": job.started_at,
             "source": "direct",
+            "origin": _origin(job.origin),
+            "origin_device": _origin_device(job.origin_device),
         }
         if job.state in {"queued", "running"}:
             projection["updated_at"] = observed_at
@@ -625,7 +639,9 @@ class GenerationManager:
                 pass
         return True
 
-    def start_txt2img(self, params: dict) -> GenerationJob:
+    def start_txt2img(
+        self, params: dict, *, origin: object = "unknown", origin_device: object = None,
+    ) -> GenerationJob:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         job = GenerationJob(
             job_id=uuid.uuid4().hex[:12],
@@ -635,6 +651,8 @@ class GenerationManager:
             runtime_revision=runtime_revision(),
             worker_id=worker_identity(),
             machine_id=machine_identity(),
+            origin=_origin(origin),
+            origin_device=_origin_device(origin_device),
         )
         with self._lock:
             self._jobs[job.job_id] = job
@@ -647,7 +665,9 @@ class GenerationManager:
         job.thread.start()
         return job
 
-    def start_img2img(self, params: dict) -> GenerationJob:
+    def start_img2img(
+        self, params: dict, *, origin: object = "unknown", origin_device: object = None,
+    ) -> GenerationJob:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         job = GenerationJob(
             job_id=uuid.uuid4().hex[:12],
@@ -657,6 +677,8 @@ class GenerationManager:
             runtime_revision=runtime_revision(),
             worker_id=worker_identity(),
             machine_id=machine_identity(),
+            origin=_origin(origin),
+            origin_device=_origin_device(origin_device),
         )
         with self._lock:
             self._jobs[job.job_id] = job
@@ -671,7 +693,9 @@ class GenerationManager:
         job.thread.start()
         return job
 
-    def start_edit(self, params: dict) -> GenerationJob:
+    def start_edit(
+        self, params: dict, *, origin: object = "unknown", origin_device: object = None,
+    ) -> GenerationJob:
         """
         Instruction-based image edit. Dispatches to the right mflux variant
         based on the model's family (klein → Flux2KleinEdit, etc.). Reuses
@@ -686,6 +710,8 @@ class GenerationManager:
             runtime_revision=runtime_revision(),
             worker_id=worker_identity(),
             machine_id=machine_identity(),
+            origin=_origin(origin),
+            origin_device=_origin_device(origin_device),
         )
         with self._lock:
             self._jobs[job.job_id] = job
@@ -828,6 +854,8 @@ class GenerationManager:
             "runtime_revision": job.runtime_revision,
             "worker_id": job.worker_id,
             "machine_id": job.machine_id,
+            "origin": _origin(job.origin),
+            "origin_device": _origin_device(job.origin_device),
             "asset_evidence": job.asset_evidence,
             "error": job.error,
             "started_at": job.started_at,
@@ -861,6 +889,8 @@ class GenerationManager:
                 runtime_revision=raw.get("runtime_revision"),
                 worker_id=raw.get("worker_id"),
                 machine_id=raw.get("machine_id"),
+                origin=_origin(raw.get("origin")),
+                origin_device=_origin_device(raw.get("origin_device")),
                 asset_evidence=raw.get("asset_evidence") or {},
                 error=raw.get("error"),
                 started_at=raw.get("started_at"),
