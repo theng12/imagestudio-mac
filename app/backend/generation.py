@@ -276,6 +276,7 @@ class GenerationJob:
     finished_at: Optional[float] = None
     cancel_event: threading.Event = field(default_factory=threading.Event)
     thread: Optional[threading.Thread] = None
+    created_at: float = field(default_factory=time.time)
 
     def serialize(self) -> dict:
         duration = None
@@ -369,6 +370,78 @@ class GenerationManager:
 
     def list_jobs(self) -> list[GenerationJob]:
         return list(self._jobs.values())
+
+    @staticmethod
+    def _activity_created_at(job: GenerationJob) -> float:
+        value = getattr(job, "created_at", None)
+        if value is None:
+            value = job.started_at if job.started_at is not None else job.finished_at
+        try:
+            return float(value) if value is not None else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _activity_progress(job: GenerationJob) -> float:
+        try:
+            value = float(job.progress)
+        except (TypeError, ValueError):
+            value = 0.0
+        return max(0.0, min(1.0, value))
+
+    @classmethod
+    def _activity_projection(cls, job: GenerationJob, *, observed_at: float) -> dict:
+        model = job.params.get("repo") if isinstance(job.params, dict) else None
+        if model is not None:
+            model = str(model).strip()[:200] or None
+        projection = {
+            "id": job.job_id,
+            "state": str(job.state),
+            "model": model,
+            "progress": cls._activity_progress(job),
+            "created_at": cls._activity_created_at(job),
+            "started_at": job.started_at,
+            "source": "direct",
+        }
+        if job.state in {"queued", "running"}:
+            projection["updated_at"] = observed_at
+        else:
+            projection["finished_at"] = job.finished_at
+            runtime = None
+            if job.started_at is not None and job.finished_at is not None:
+                try:
+                    runtime = max(0.0, float(job.finished_at) - float(job.started_at))
+                except (TypeError, ValueError):
+                    pass
+            projection["runtime_s"] = runtime
+            # Do not echo arbitrary worker errors: they may include request
+            # values or filesystem paths. The terminal state is the evidence.
+            projection["error"] = None
+        return projection
+
+    def activity_snapshot(self, observed_at: float | None = None) -> dict:
+        """Return the bounded activity contract for the Image Studio worker."""
+        observed = time.time() if observed_at is None else float(observed_at)
+        jobs = [job for job in self.list_jobs()
+                if str(job.state) in {"queued", "running", "done", "error", "cancelled"}]
+        active_jobs = [job for job in jobs if str(job.state) in {"queued", "running"}]
+        terminal_jobs = [job for job in jobs if str(job.state) in {"done", "error", "cancelled"}]
+        active_job = max(active_jobs, key=self._activity_created_at, default=None)
+        latest_job = max(
+            terminal_jobs,
+            key=lambda job: (
+                float(job.finished_at) if job.finished_at is not None else self._activity_created_at(job),
+                self._activity_created_at(job),
+            ),
+            default=None,
+        )
+        return {
+            "schema": "kh-studio.activity.v1",
+            "observed_at": observed,
+            "studio": "image",
+            "active": self._activity_projection(active_job, observed_at=observed) if active_job else None,
+            "latest": self._activity_projection(latest_job, observed_at=observed) if latest_job else None,
+        }
 
     def get(self, job_id: str) -> Optional[GenerationJob]:
         return self._jobs.get(job_id)
@@ -742,6 +815,7 @@ class GenerationManager:
             "current_step": job.current_step,
             "total_steps": job.total_steps,
             "params": job.params,
+            "created_at": job.created_at,
             "output_path": job.output_path,
             "resolved_seed": job.resolved_seed,
             "runtime_revision": job.runtime_revision,
@@ -765,6 +839,12 @@ class GenerationManager:
                 job_id=raw["job_id"],
                 mode=raw.get("mode", "txt2img"),
                 params=raw.get("params") or {},
+                created_at=(
+                    raw.get("created_at")
+                    or raw.get("started_at")
+                    or raw.get("finished_at")
+                    or time.time()
+                ),
                 state=raw.get("state", "done"),
                 progress=raw.get("progress", 1.0),
                 current_step=raw.get("current_step", 0),
