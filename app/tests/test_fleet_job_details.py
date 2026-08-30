@@ -104,6 +104,27 @@ def test_image_detail_projection_is_allowlisted_and_path_free(configured_job):
 
 
 @pytest.mark.parametrize(
+    ("state", "progress", "expected"),
+    (
+        ("running", 0.42, 0.42),
+        ("queued", 2.0, 1.0),
+        ("running", -1.0, 0.0),
+        ("running", float("nan"), 0.0),
+        ("running", "legacy", 0.0),
+    ),
+)
+def test_active_image_detail_progress_is_bounded(
+    configured_job, state, progress, expected,
+):
+    configured_job.state = state
+    configured_job.progress = progress
+
+    details = build_job_details(configured_job, "fleet-secret", now=100)
+
+    assert details["job"]["progress"] == expected
+
+
+@pytest.mark.parametrize(
     ("collection", "expected"),
     (("references", "reference.png"), ("outputs", "job-1.png")),
 )

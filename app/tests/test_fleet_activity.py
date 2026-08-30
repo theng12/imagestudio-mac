@@ -117,7 +117,7 @@ def test_activity_snapshot_exposes_only_active_and_latest_safe_evidence():
     assert result["active"]["model"] == "org/model"
     assert result["active"]["source"] == "direct"
     assert result["active"]["origin"] == "local_ui"
-    assert result["active"]["origin_device"] is None
+    assert "origin_device" not in result["active"]
     assert result["latest"]["id"] == "done"
     assert result["latest"]["runtime_s"] == 5.0
     assert result["latest"]["source"] == "direct"
@@ -153,7 +153,6 @@ def test_activity_snapshot_clamps_progress_and_uses_terminal_timestamps():
         "runtime_s": 10.0,
         "source": "direct",
         "origin": "unknown",
-        "origin_device": None,
         "error": None,
     }
     assert result["latest"]["error"] is None
@@ -177,7 +176,7 @@ def test_activity_snapshot_defaults_legacy_history_provenance_to_unknown():
     result = GenerationManager._activity_projection(job, observed_at=20.0)
 
     assert result["origin"] == "unknown"
-    assert result["origin_device"] is None
+    assert "origin_device" not in result
     assert "private" not in repr(result)
 
 

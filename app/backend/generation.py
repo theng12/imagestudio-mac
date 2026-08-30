@@ -407,6 +407,7 @@ class GenerationManager:
         model = job.params.get("repo") if isinstance(job.params, dict) else None
         if model is not None:
             model = str(model).strip()[:200] or None
+        origin_device = _origin_device(job.origin_device)
         projection = {
             "id": job.job_id,
             "state": str(job.state),
@@ -416,7 +417,7 @@ class GenerationManager:
             "started_at": job.started_at,
             "source": "direct",
             "origin": _origin(job.origin),
-            "origin_device": _origin_device(job.origin_device),
+            **({"origin_device": origin_device} if origin_device else {}),
         }
         if job.state in {"queued", "running"}:
             projection["updated_at"] = observed_at
