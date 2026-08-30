@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -48,7 +48,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from . import cache, catalog, fleet_auth, generation_installer, loras, memory_policy, settings as app_settings, sizes as _sizes, storage_policy
+from . import cache, catalog, fleet_auth, generation_installer, job_details, loras, memory_policy, settings as app_settings, sizes as _sizes, storage_policy
 from .downloads import manager
 from .generation import manager as gen_manager, diagnostics as gen_diagnostics
 from .generation import OUTPUT_DIR
@@ -1192,6 +1192,32 @@ def list_generation_jobs() -> dict:
 @app.get("/api/fleet/activity")
 def fleet_activity() -> dict:
     return gen_manager.activity_snapshot()
+
+
+@app.get("/api/fleet/jobs/{job_id}/details")
+def fleet_job_details(job_id: str, response: Response) -> dict:
+    job = gen_manager.get(job_id)
+    if job is None:
+        raise HTTPException(404, detail={"code": "job_not_found"})
+    response.headers.update(job_details.SAFE_HEADERS)
+    return job_details.build_job_details(job, token=fleet_auth.load_token())
+
+
+@app.get("/api/fleet/jobs/{job_id}/media/{handle}")
+def fleet_job_media(job_id: str, handle: str, download: bool = False):
+    job = gen_manager.get(job_id)
+    if job is None:
+        raise HTTPException(404, detail={"code": "job_not_found"})
+    try:
+        target = job_details.resolve_job_media(job, handle, fleet_auth.load_token())
+    except job_details.JobMediaError as exc:
+        status = 410 if exc.code in {"handle_expired", "media_removed"} else 403
+        raise HTTPException(status, detail={"code": exc.code}) from exc
+    disposition = "attachment" if download else "inline"
+    return FileResponse(
+        target.path, media_type=target.media_type, filename=target.name,
+        content_disposition_type=disposition, headers=job_details.SAFE_HEADERS,
+    )
 
 
 @app.delete("/api/generate/jobs")
