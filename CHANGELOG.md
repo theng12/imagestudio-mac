@@ -8,6 +8,21 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.31.0] — 2026-08-30
+
+### Added — private fleet activity evidence
+
+- `GET /api/fleet/activity` now gives Studio Hub an authenticated, sanitized
+  activity snapshot for this Image Studio: safe job/model/progress/result
+  evidence, direct-versus-Hub attribution where available, and the latest
+  terminal activity. It exposes no prompts, filesystem paths, assets,
+  credentials, or reference media.
+- The endpoint uses the existing fleet authentication and does not create a
+  new dependency, model, port, or service. **Ordinary Update** is enough for
+  this minor release; it does not update any fleet Mac automatically. Older
+  Studios remain compatible and appear as partial or unknown activity until
+  they are updated.
+
 ## [1.30.5] — 2026-08-25
 
 ### Fixed — automatic updates launch through a named wrapper

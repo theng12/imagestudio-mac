@@ -369,7 +369,8 @@ class GenerationManager:
         }
 
     def list_jobs(self) -> list[GenerationJob]:
-        return list(self._jobs.values())
+        with self._lock:
+            return list(self._jobs.values())
 
     @staticmethod
     def _activity_created_at(job: GenerationJob) -> float:
@@ -635,7 +636,8 @@ class GenerationManager:
             worker_id=worker_identity(),
             machine_id=machine_identity(),
         )
-        self._jobs[job.job_id] = job
+        with self._lock:
+            self._jobs[job.job_id] = job
         job.thread = threading.Thread(
             target=self._run_txt2img,
             args=(job,),
@@ -656,7 +658,8 @@ class GenerationManager:
             worker_id=worker_identity(),
             machine_id=machine_identity(),
         )
-        self._jobs[job.job_id] = job
+        with self._lock:
+            self._jobs[job.job_id] = job
         # Same worker as txt2img — the Flux2Klein.generate_image call below
         # reads `image_path` and `image_strength` from params when present.
         job.thread = threading.Thread(
@@ -684,7 +687,8 @@ class GenerationManager:
             worker_id=worker_identity(),
             machine_id=machine_identity(),
         )
-        self._jobs[job.job_id] = job
+        with self._lock:
+            self._jobs[job.job_id] = job
         job.thread = threading.Thread(
             target=self._run_edit,
             args=(job,),

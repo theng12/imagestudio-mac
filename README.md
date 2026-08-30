@@ -234,6 +234,7 @@ No deps beyond stdlib — runs without the venv.
 ```
 GET  /api/health
 GET  /api/catalog                  # models + families + live cache state
+GET  /api/fleet/activity           # authenticated, sanitized activity for Studio Hub only
 GET  /api/cache/{owner}/{name}     # one repo's cache state
 GET  /api/downloads                # list jobs
 POST /api/downloads                # { repo, token? }   start a download
@@ -242,6 +243,14 @@ GET  /api/downloads/stream         # SSE per-second snapshots
 GET  /api/imports/scan             # list candidates from EXTRA_MODEL_DIRS
 POST /api/imports                  # { source_path, repo? }
 ```
+
+`GET /api/fleet/activity` uses the existing fleet authentication and is not a
+public customer endpoint. It reports only safe job/model/progress/result and
+the latest terminal activity for Studio Hub, including Hub/direct attribution
+where available. It never returns prompts, filesystem paths, assets,
+credentials, or reference media. Older Studios remain compatible but can
+appear as partial or unknown activity until updated; this release adds no
+dependency, model, port, or service, so ordinary **Update** is sufficient.
 
 ### Curl examples
 

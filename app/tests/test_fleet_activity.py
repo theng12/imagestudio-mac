@@ -1,13 +1,81 @@
 import json
+import threading
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend import main
+from backend import generation
 from backend.generation import GenerationJob, GenerationManager
+
+
+def test_activity_snapshot_waits_for_the_job_registry_lock():
+    manager = GenerationManager.__new__(GenerationManager)
+    manager._lock = threading.Lock()
+    manager._jobs = {
+        "running": GenerationJob("running", "txt2img", {"repo": "org/model"}, state="running"),
+    }
+    entered, finished = threading.Event(), threading.Event()
+
+    def snapshot():
+        entered.set()
+        manager.activity_snapshot(observed_at=1.0)
+        finished.set()
+
+    with manager._lock:
+        reader = threading.Thread(target=snapshot)
+        reader.start()
+        assert entered.wait(1)
+        assert not finished.wait(0.1)
+    assert finished.wait(1)
+    reader.join()
+
+
+@pytest.mark.parametrize("operation", ("start", "snapshot", "clear", "delete"))
+def test_live_job_registry_operations_share_the_same_lock(tmp_path, monkeypatch, operation):
+    """Starting and maintenance cannot race the activity reporter's job copy."""
+    manager = GenerationManager.__new__(GenerationManager)
+    manager._lock = threading.Lock()
+    manager._jobs = {
+        "terminal": GenerationJob("terminal", "txt2img", {"repo": "org/model"}, state="done"),
+    }
+    manager._persist = lambda: None
+    monkeypatch.setattr(generation, "OUTPUT_DIR", tmp_path)
+
+    class NoopWorker:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    real_thread = threading.Thread
+    monkeypatch.setattr(generation.threading, "Thread", NoopWorker)
+    actions = {
+        "start": lambda: manager.start_txt2img({"steps": 1}),
+        "snapshot": lambda: manager.activity_snapshot(observed_at=1.0),
+        "clear": manager.clear_history,
+        "delete": lambda: manager.delete_job("terminal"),
+    }
+    entered, finished = threading.Event(), threading.Event()
+
+    def run_operation():
+        entered.set()
+        actions[operation]()
+        finished.set()
+
+    with manager._lock:
+        worker = real_thread(target=run_operation)
+        worker.start()
+        assert entered.wait(1)
+        assert not finished.wait(0.1)
+    assert finished.wait(1)
+    worker.join()
 
 
 def test_activity_snapshot_prefers_running_job_over_newer_queued_job():
     manager = GenerationManager.__new__(GenerationManager)
+    manager._lock = threading.Lock()
     manager._jobs = {
         "running": GenerationJob(
             "running", "txt2img", {"repo": "running/model"},
@@ -27,6 +95,7 @@ def test_activity_snapshot_prefers_running_job_over_newer_queued_job():
 
 def test_activity_snapshot_exposes_only_active_and_latest_safe_evidence():
     manager = GenerationManager.__new__(GenerationManager)
+    manager._lock = threading.Lock()
     manager._jobs = {
         "run": GenerationJob(
             "run", "txt2img", {"repo": "org/model", "prompt": "secret"},
@@ -56,6 +125,7 @@ def test_activity_snapshot_exposes_only_active_and_latest_safe_evidence():
 
 def test_activity_snapshot_clamps_progress_and_uses_terminal_timestamps():
     manager = GenerationManager.__new__(GenerationManager)
+    manager._lock = threading.Lock()
     manager._jobs = {
         "old": GenerationJob(
             "old", "txt2img", {"repo": "old/model"}, state="error",
@@ -89,6 +159,7 @@ def test_activity_snapshot_clamps_progress_and_uses_terminal_timestamps():
 
 def test_activity_route_is_authenticated_and_returns_sanitized_snapshot(monkeypatch):
     manager = GenerationManager.__new__(GenerationManager)
+    manager._lock = threading.Lock()
     manager._jobs = {
         "run": GenerationJob(
             "run", "txt2img", {
