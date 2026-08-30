@@ -121,6 +121,8 @@ def _has_symlink(path: Path, root: Path) -> bool:
 
 def _resolve_target(path: Path, root: Path, media_type: str) -> MediaTarget:
     try:
+        if root.is_symlink():
+            raise JobMediaError("media_removed")
         resolved_root = root.resolve(strict=True)
         resolved = path.resolve(strict=True)
         resolved.relative_to(resolved_root)

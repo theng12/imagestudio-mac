@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -130,6 +130,16 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
 app.add_middleware(NoCacheStaticMiddleware)
 FLEET_TOKEN = load_fleet_token()
 app.middleware("http")(fleet_middleware(FLEET_TOKEN))
+
+
+@app.middleware("http")
+async def fleet_job_response_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/fleet/jobs/"):
+        response.headers.update(job_details.SAFE_HEADERS)
+    return response
+
+
 storage_policy.start_background(gen_manager, OUTPUT_DIR)
 memory_policy.start_background(gen_manager)
 
@@ -1195,11 +1205,10 @@ def fleet_activity() -> dict:
 
 
 @app.get("/api/fleet/jobs/{job_id}/details")
-def fleet_job_details(job_id: str, response: Response) -> dict:
+def fleet_job_details(job_id: str) -> dict:
     job = gen_manager.get(job_id)
     if job is None:
         raise HTTPException(404, detail={"code": "job_not_found"})
-    response.headers.update(job_details.SAFE_HEADERS)
     return job_details.build_job_details(job, token=fleet_auth.load_token())
 
 
