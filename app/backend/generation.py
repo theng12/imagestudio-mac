@@ -424,9 +424,12 @@ class GenerationManager:
         observed = time.time() if observed_at is None else float(observed_at)
         jobs = [job for job in self.list_jobs()
                 if str(job.state) in {"queued", "running", "done", "error", "cancelled"}]
-        active_jobs = [job for job in jobs if str(job.state) in {"queued", "running"}]
+        running_jobs = [job for job in jobs if str(job.state) == "running"]
+        queued_jobs = [job for job in jobs if str(job.state) == "queued"]
         terminal_jobs = [job for job in jobs if str(job.state) in {"done", "error", "cancelled"}]
-        active_job = max(active_jobs, key=self._activity_created_at, default=None)
+        active_job = max(running_jobs, key=self._activity_created_at, default=None)
+        if active_job is None:
+            active_job = max(queued_jobs, key=self._activity_created_at, default=None)
         latest_job = max(
             terminal_jobs,
             key=lambda job: (

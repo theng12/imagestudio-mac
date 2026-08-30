@@ -6,6 +6,25 @@ from backend import main
 from backend.generation import GenerationJob, GenerationManager
 
 
+def test_activity_snapshot_prefers_running_job_over_newer_queued_job():
+    manager = GenerationManager.__new__(GenerationManager)
+    manager._jobs = {
+        "running": GenerationJob(
+            "running", "txt2img", {"repo": "running/model"},
+            state="running", progress=0.6, started_at=11.0, created_at=10.0,
+        ),
+        "queued": GenerationJob(
+            "queued", "txt2img", {"repo": "queued/model"},
+            state="queued", progress=0.0, created_at=20.0,
+        ),
+    }
+
+    result = manager.activity_snapshot(observed_at=25.0)
+
+    assert result["active"]["id"] == "running"
+    assert result["active"]["model"] == "running/model"
+
+
 def test_activity_snapshot_exposes_only_active_and_latest_safe_evidence():
     manager = GenerationManager.__new__(GenerationManager)
     manager._jobs = {
