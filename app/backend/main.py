@@ -21,6 +21,7 @@ Serves:
 - `/api/generate/jobs/{id}/image`    → fetch the rendered PNG
 - `/api/generate/jobs/{id}/cancel`   → cancel a running job
 - `/api/generate/stream`             → SSE stream of generation jobs
+- `/api/fleet/activity`              → authenticated current activity snapshot
 """
 from __future__ import annotations
 
@@ -47,7 +48,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from . import cache, catalog, generation_installer, loras, memory_policy, settings as app_settings, sizes as _sizes, storage_policy
+from . import cache, catalog, fleet_auth, generation_installer, job_details, loras, memory_policy, settings as app_settings, sizes as _sizes, storage_policy
 from .downloads import manager
 from .generation import manager as gen_manager, diagnostics as gen_diagnostics
 from .generation import OUTPUT_DIR
@@ -129,6 +130,16 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
 app.add_middleware(NoCacheStaticMiddleware)
 FLEET_TOKEN = load_fleet_token()
 app.middleware("http")(fleet_middleware(FLEET_TOKEN))
+
+
+@app.middleware("http")
+async def fleet_job_response_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/fleet/jobs/"):
+        response.headers.update(job_details.SAFE_HEADERS)
+    return response
+
+
 storage_policy.start_background(gen_manager, OUTPUT_DIR)
 memory_policy.start_background(gen_manager)
 
@@ -965,7 +976,7 @@ def install_generation_dependencies(request: Request) -> dict:
 
 
 @app.post("/api/generate/txt2img")
-def start_txt2img(body: Txt2ImgBody) -> dict:
+def start_txt2img(body: Txt2ImgBody, request: Request) -> dict:
     _validate_generation_controls(
         prompt=body.prompt, width=body.width, height=body.height,
         steps=body.steps, guidance=body.guidance, seed=body.seed,
@@ -1005,12 +1016,14 @@ def start_txt2img(body: Txt2ImgBody) -> dict:
     params = body.model_dump()
     params["model_revision"] = actual_revision
     params["lora_paths"] = lora_paths
-    job = gen_manager.start_txt2img(params)
+    origin, origin_device = fleet_auth.classify_job_origin(request)
+    job = gen_manager.start_txt2img(params, origin=origin, origin_device=origin_device)
     return {"job": job.serialize()}
 
 
 @app.post("/api/generate/img2img")
 async def start_img2img(
+    request: Request,
     image: UploadFile = File(...),
     repo: str = Form(...),
     prompt: str = Form(...),
@@ -1091,12 +1104,14 @@ async def start_img2img(
         "lora_paths": lora_paths,
         "model_revision": actual_revision,
     }
-    job = gen_manager.start_img2img(params)
+    origin, origin_device = fleet_auth.classify_job_origin(request)
+    job = gen_manager.start_img2img(params, origin=origin, origin_device=origin_device)
     return {"job": job.serialize()}
 
 
 @app.post("/api/generate/edit")
 async def start_edit(
+    request: Request,
     image: UploadFile = File(...),
     repo: str = Form(...),
     prompt: str = Form(...),
@@ -1174,13 +1189,44 @@ async def start_edit(
         "lora_paths": lora_paths,
         "model_revision": actual_revision,
     }
-    job = gen_manager.start_edit(params)
+    origin, origin_device = fleet_auth.classify_job_origin(request)
+    job = gen_manager.start_edit(params, origin=origin, origin_device=origin_device)
     return {"job": job.serialize()}
 
 
 @app.get("/api/generate/jobs")
 def list_generation_jobs() -> dict:
     return {"jobs": [j.serialize() for j in gen_manager.list_jobs()]}
+
+
+@app.get("/api/fleet/activity")
+def fleet_activity() -> dict:
+    return gen_manager.activity_snapshot()
+
+
+@app.get("/api/fleet/jobs/{job_id}/details")
+def fleet_job_details(job_id: str) -> dict:
+    job = gen_manager.get(job_id)
+    if job is None:
+        raise HTTPException(404, detail={"code": "job_not_found"})
+    return job_details.build_job_details(job, token=fleet_auth.load_token())
+
+
+@app.get("/api/fleet/jobs/{job_id}/media/{handle}")
+def fleet_job_media(job_id: str, handle: str, download: bool = False):
+    job = gen_manager.get(job_id)
+    if job is None:
+        raise HTTPException(404, detail={"code": "job_not_found"})
+    try:
+        target = job_details.resolve_job_media(job, handle, fleet_auth.load_token())
+    except job_details.JobMediaError as exc:
+        status = 410 if exc.code in {"handle_expired", "media_removed"} else 403
+        raise HTTPException(status, detail={"code": exc.code}) from exc
+    disposition = "attachment" if download else "inline"
+    return FileResponse(
+        target.path, media_type=target.media_type, filename=target.name,
+        content_disposition_type=disposition, headers=job_details.SAFE_HEADERS,
+    )
 
 
 @app.delete("/api/generate/jobs")

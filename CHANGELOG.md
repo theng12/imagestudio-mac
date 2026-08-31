@@ -8,6 +8,37 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.32.0] — 2026-08-31
+
+### Added — authenticated on-demand fleet job details
+
+- Studio Hub can now request one exact Image job through authenticated
+  `GET /api/fleet/jobs/{job_id}/details`, including its allowlisted settings,
+  server-derived origin, and available reference/output metadata. Ordinary
+  `GET /api/fleet/activity` polling remains content-free: it never carries
+  prompts, paths, media, handles, credentials, or full parameter maps.
+- Authenticated media reads use `GET /api/fleet/jobs/{job_id}/media/{handle}`.
+  Each opaque, path-free handle is HMAC-bound to its exact job and media item,
+  expires after five minutes, and streams with no-store response headers.
+  Local job cleanup and output retention remain authoritative, so pruned media
+  is unavailable rather than copied or restored by Studio Hub.
+- This release changes no dependency, model, installation flow, or launcher.
+
+## [1.31.0] — 2026-08-30
+
+### Added — private fleet activity evidence
+
+- `GET /api/fleet/activity` now gives Studio Hub an authenticated, sanitized
+  activity snapshot for this Image Studio: safe job/model/progress/result
+  evidence, direct-versus-Hub attribution where available, and the latest
+  terminal activity. It exposes no prompts, filesystem paths, assets,
+  credentials, or reference media.
+- The endpoint uses the existing fleet authentication and does not create a
+  new dependency, model, port, or service. **Ordinary Update** is enough for
+  this minor release; it does not update any fleet Mac automatically. Older
+  Studios remain compatible and appear as partial or unknown activity until
+  they are updated.
+
 ## [1.30.5] — 2026-08-25
 
 ### Fixed — automatic updates launch through a named wrapper
