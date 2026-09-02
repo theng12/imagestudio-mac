@@ -30,3 +30,4 @@ auto_update/
 
 # graphify knowledge-graph output (regenerate with /graphify)
 graphify-out/
+.venv/
