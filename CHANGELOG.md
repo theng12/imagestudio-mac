@@ -8,6 +8,17 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.32.1] — 2026-09-03
+
+### Changed — local development hygiene
+
+- Local `.venv/` directories are now ignored, so creating a developer virtual
+  environment no longer dirties the Image Studio checkout.
+- The repository now includes `pytest.ini`, so the full test suite discovers
+  the `app` package without a manual `PYTHONPATH=app` override.
+- This patch changes no application behavior, model catalog, dependencies,
+  services, fleet state, or generated/runtime data.
+
 ## [1.32.0] — 2026-08-31
 
 ### Added — authenticated on-demand fleet job details
