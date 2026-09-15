@@ -86,7 +86,7 @@
         <button class="primary small" x-show="selectedReadiness.state==='install'"
                 :disabled="generationInstall.busy" @click="installGeneration()"
                 x-text="generationInstall.busy ? 'Installing…' : 'Install engines'"></button>
-        <button class="ghost small" @click="refreshDiagnostics(); refreshGenAvailability()">Re-check</button>
+        <button class="ghost small" @click="refreshCatalog(); refreshDiagnostics(); refreshGenAvailability()">Re-check</button>
       </div>
       <div class="install-progress" x-show="generationInstall.state!=='idle'" x-cloak>
         <strong x-text="generationInstall.message"></strong>
@@ -914,7 +914,10 @@
                     </div>
                     <div class="variant-action">
                       <template x-if="m.cache.state !== 'cached' && !m.active_download"><button class="primary" @click="confirmDownload(m)" :title="m.runtime_compatible===false ? m.runtime_note : ''" x-text="m.runtime_compatible===false ? 'Download only' : 'Download'"></button></template>
-                      <template x-if="m.cache.state === 'cached'">
+                      <template x-if="m.cache.state === 'cached' && m.readiness?.error_code === 'MODEL_FILES_UNAVAILABLE' && !m.active_download">
+                        <button class="primary" @click="confirmDownload(m)">Repair</button>
+                      </template>
+                      <template x-if="m.cache.state === 'cached' && m.readiness?.error_code !== 'MODEL_FILES_UNAVAILABLE' && !m.active_download">
                         <button class="primary use-model-button" :disabled="!isModelReady(m.repo)"
                                 @click="gen.mode=(m.capabilities.includes(gen.mode) ? gen.mode : m.capabilities[0]); gen.repo=m.repo; tab='generate'">Use model</button>
                       </template>
@@ -932,7 +935,8 @@
                       <div class="variant-readiness">
                         <span class="chip engine-ready" x-show="m.runtime_compatible!==false && m.cache.state==='cached' && isModelReady(m.repo)">Engine ready</span>
                         <span class="chip engine-pending" x-show="m.runtime_compatible===false" :title="m.runtime_note">Format support pending</span>
-                        <span class="chip engine-pending" x-show="m.runtime_compatible!==false && m.cache.state==='cached' && !isModelReady(m.repo) && modelDepsOk(m.repo)">Worker in roadmap</span>
+                        <span class="chip engine-missing" x-show="m.cache.state==='cached' && m.readiness?.error_code==='MODEL_FILES_UNAVAILABLE'">Model files need repair</span>
+                        <span class="chip engine-pending" x-show="m.runtime_compatible!==false && m.cache.state==='cached' && m.readiness?.error_code!=='MODEL_FILES_UNAVAILABLE' && !isModelReady(m.repo) && modelDepsOk(m.repo)">Worker in roadmap</span>
                         <span class="chip engine-missing" x-show="m.runtime_compatible!==false && m.cache.state==='cached' && !modelDepsOk(m.repo)">Engine needs install</span>
                       </div>
                       <p class="saved-loc" x-show="m.cache.state==='cached' && m.cache.path"><small>Saved at <code x-text="m.cache.path"></code></small><button class="link small" @click="revealInFolder(m.cache.path)">Reveal in Finder</button></p>
@@ -1579,14 +1583,14 @@
     <div class="modal" x-show="pendingDownload">
       <template x-if="pendingDownload">
         <div>
-          <h2>Download this model?</h2>
+          <h2 x-text="pendingDownload.cache?.state === 'cached' && pendingDownload.readiness?.error_code === 'MODEL_FILES_UNAVAILABLE' ? 'Repair this model?' : 'Download this model?'"></h2>
           <p>
             <strong x-text="pendingDownload.label"></strong>
             <br/>
             <code x-text="pendingDownload.repo"></code>
           </p>
           <ul class="facts">
-            <li><span x-text="formatGb(pendingDownload.size_gb) + ' download'"></span></li>
+            <li><span x-text="pendingDownload.cache?.state === 'cached' && pendingDownload.readiness?.error_code === 'MODEL_FILES_UNAVAILABLE' ? 'Existing valid files will be reused; missing cache entries will be fetched' : formatGb(pendingDownload.size_gb) + ' download'"></span></li>
             <li><span x-text="'Needs ≥' + pendingDownload.min_unified_memory_gb + ' GB unified memory at runtime'"></span></li>
             <li x-show="pendingDownload.gated">
               Gated repo — you'll need a Hugging Face token with access.
@@ -1610,7 +1614,7 @@
 
           <div class="modal-actions">
             <button class="ghost" @click="pendingDownload=null">Cancel</button>
-            <button class="primary" @click="startDownload()">Start download</button>
+            <button class="primary" @click="startDownload()" x-text="pendingDownload.cache?.state === 'cached' && pendingDownload.readiness?.error_code === 'MODEL_FILES_UNAVAILABLE' ? 'Start repair' : 'Start download'"></button>
           </div>
         </div>
       </template>

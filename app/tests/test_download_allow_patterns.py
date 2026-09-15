@@ -45,6 +45,7 @@ def snapshot_calls(monkeypatch):
 
     monkeypatch.setattr(downloads, "snapshot_download", fake_snapshot_download)
     monkeypatch.setattr(downloads.cache, "ensure_hub_dir", lambda: None)
+    monkeypatch.setattr(downloads.cache, "require_model_files", lambda repo: None)
     monkeypatch.setattr(downloads.settings, "get_hf_token", lambda: None)
     monkeypatch.setattr(
         downloads.DownloadManager, "_resolve_total_bytes",

@@ -284,6 +284,7 @@ class GenerationJob:
     resource_telemetry: Optional[dict] = None
     resource_memory_failure: bool = False
     error: Optional[str] = None
+    error_code: Optional[str] = None
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     cancel_event: threading.Event = field(default_factory=threading.Event)
@@ -333,6 +334,7 @@ class GenerationJob:
             "output_url": f"/api/generate/jobs/{self.job_id}/image" if published else None,
             "resolved_seed": self.resolved_seed,
             "error": self.error,
+            "error_code": self.error_code,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "duration_seconds": duration,
@@ -894,6 +896,7 @@ class GenerationManager:
                 origin_device=_origin_device(raw.get("origin_device")),
                 asset_evidence=raw.get("asset_evidence") or {},
                 error=raw.get("error"),
+                error_code=raw.get("error_code"),
                 started_at=raw.get("started_at"),
                 finished_at=raw.get("finished_at"),
             )
@@ -1034,6 +1037,7 @@ class GenerationManager:
                 else:
                     job.state = "error"
                     job.error = f"{type(e).__name__}: {e}"
+                    job.error_code = getattr(e, "error_code", None)
                     print(f"[gen] edit error {job.job_id}: {job.error}", file=sys.stderr, flush=True)
                     traceback.print_exc()
             finally:
@@ -1062,6 +1066,7 @@ class GenerationManager:
             raise ValueError(f"Repo {repo} is not in the catalog")
         if cache.cache_state(repo) != "cached":
             raise ValueError(f"Model {repo} is not fully cached locally — download it first")
+        cache.require_model_files(repo, job.params.get("model_revision"))
         if "edit" not in (model.capabilities or ()):
             raise ValueError(f"Model {repo} does not support edit mode")
 
@@ -1262,6 +1267,7 @@ class GenerationManager:
                 else:
                     job.state = "error"
                     job.error = f"{type(e).__name__}: {e}"
+                    job.error_code = getattr(e, "error_code", None)
                     print(f"[gen] error {job.job_id}: {job.error}", file=sys.stderr, flush=True)
                     traceback.print_exc()
             finally:
@@ -1292,6 +1298,7 @@ class GenerationManager:
 
         if cache.cache_state(repo) != "cached":
             raise ValueError(f"Model {repo} is not fully cached locally — download it first")
+        cache.require_model_files(repo, job.params.get("model_revision"))
 
         # Diffusers-engine models run on PyTorch/MPS via a separate worker,
         # routed by engine (not by mflux family). Handle before family dispatch.
