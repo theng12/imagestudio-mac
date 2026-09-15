@@ -65,6 +65,7 @@ class DownloadJob:
     token: Optional[str] = None
     state: str = "queued"           # queued | running | paused | done | error | cancelled
     error: Optional[str] = None
+    error_code: Optional[str] = None
     total_bytes: int = 0            # 0 until we resolve it from HF API
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
@@ -143,6 +144,7 @@ class DownloadJob:
             "repo": self.repo,
             "state": self.state,
             "error": self.error,
+            "error_code": self.error_code,
             "bytes_done": bytes_done,
             "bytes_partial": bytes_partial,
             "bytes_observed": observed,
@@ -292,6 +294,8 @@ class DownloadManager:
                 token=effective_token,
                 allow_patterns=_allow_patterns_for(job.repo),
             )
+            if catalog.get_model(job.repo) is not None:
+                cache.require_model_files(job.repo)
             if job.cancel_event.is_set():
                 job.state = "cancelled"
                 print(f"[downloads] cancelled {job.repo}", flush=True)
@@ -305,6 +309,7 @@ class DownloadManager:
             else:
                 job.state = "error"
                 job.error = f"{type(e).__name__}: {e}"
+                job.error_code = getattr(e, "error_code", None)
                 print(f"[downloads] error {job.repo}: {job.error}", file=sys.stderr, flush=True)
                 traceback.print_exc()
         finally:

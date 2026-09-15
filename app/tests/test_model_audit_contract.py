@@ -84,6 +84,15 @@ def test_live_inventory_adds_candidate_without_weakening_revision_readiness():
     with (
         patch("backend.main.cache.status_snapshot", side_effect=cache_status),
         patch("backend.main.cache.snapshot_revision", return_value=RUNTIME_REVISION),
+        patch(
+            "backend.main.cache.model_files_readiness",
+            return_value={
+                "ready": True,
+                "revision": RUNTIME_REVISION,
+                "error_code": None,
+                "reason": None,
+            },
+        ),
         patch("backend.main.gen_manager.is_available", return_value=True),
         patch(
             "backend.main.gen_manager.availability",
@@ -93,6 +102,7 @@ def test_live_inventory_adds_candidate_without_weakening_revision_readiness():
         target = next(model for model in get_catalog()["models"] if model["repo"] == RUNTIME_REPO)
 
     assert target["execution_ready"] is True
+    assert target["readiness"]["ready"] is True
     assert target["genstudio_candidate"]["contract_hash"] == CONTRACT_HASH
     assert target["genstudio_candidate"]["capacity"] == {
         "max_concurrency": 1,

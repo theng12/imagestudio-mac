@@ -349,6 +349,16 @@ def _resolve_local_model_revision(repo: str, requested: Optional[str]) -> str:
     return actual
 
 
+def _require_local_model_files(repo: str, revision: str) -> None:
+    try:
+        cache.require_model_files(repo, revision)
+    except cache.ModelFilesUnavailable as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": exc.error_code, "message": exc.reason},
+        ) from exc
+
+
 def _parse_lora_fields(names: str, scales: str) -> tuple[list[str], list[float]]:
     name_list = [n.strip() for n in names.split(",") if n.strip()] if names else []
     try:
@@ -599,12 +609,46 @@ def get_catalog() -> dict:
         d["cache"] = cache_status
         d["model_revision"] = revision
         d["qualified_revision_match"] = revision_match
-        d["execution_ready"] = bool(
-            gen_manager.is_available()
-            and cache_status["state"] == "cached"
-            and m.runtime_compatible
-            and revision_match
-        )
+        file_readiness = cache.model_files_readiness(m.repo, revision)
+        if cache_status["state"] != "cached":
+            readiness = {
+                "ready": False,
+                "revision": revision,
+                "error_code": cache.MODEL_FILES_UNAVAILABLE,
+                "reason": cache.MODEL_FILES_UNAVAILABLE_REASON,
+            }
+        elif not file_readiness["ready"]:
+            readiness = file_readiness
+        elif not gen_manager.is_available():
+            readiness = {
+                "ready": False,
+                "revision": revision,
+                "error_code": "MODEL_DEPENDENCIES_UNAVAILABLE",
+                "reason": "The model's generation dependencies are unavailable.",
+            }
+        elif not m.runtime_compatible:
+            readiness = {
+                "ready": False,
+                "revision": revision,
+                "error_code": "MODEL_RUNTIME_UNAVAILABLE",
+                "reason": m.runtime_note or "This model is unavailable on the current worker.",
+            }
+        elif not revision_match:
+            readiness = {
+                "ready": False,
+                "revision": revision,
+                "error_code": "MODEL_REVISION_UNAVAILABLE",
+                "reason": "The cached model does not match the qualified revision.",
+            }
+        else:
+            readiness = {
+                "ready": True,
+                "revision": revision,
+                "error_code": None,
+                "reason": None,
+            }
+        d["readiness"] = readiness
+        d["execution_ready"] = readiness["ready"]
         active = manager.active_for_repo(m.repo)
         d["active_download"] = active.serialize() if active else None
         candidate = d.get("genstudio_candidate")
@@ -1004,6 +1048,7 @@ def start_txt2img(body: Txt2ImgBody, request: Request) -> dict:
         )
 
     actual_revision = _resolve_local_model_revision(body.repo, body.model_revision)
+    _require_local_model_files(body.repo, actual_revision)
 
     # Resolve LoRA names to absolute paths so the worker doesn't need to redo it.
     lora_paths: list[str] = []
@@ -1074,6 +1119,7 @@ async def start_img2img(
         raise HTTPException(status_code=409,
             detail=f"Model {repo} is not fully cached. Download it from the Models tab first.")
     actual_revision = _resolve_local_model_revision(repo, model_revision)
+    _require_local_model_files(repo, actual_revision)
 
     # Resolve LoRAs before writing the upload, so rejected requests leave no
     # orphaned temporary file behind.
@@ -1159,6 +1205,7 @@ async def start_edit(
         raise HTTPException(status_code=409,
             detail=f"Model {repo} is not fully cached. Download it from the Models tab first.")
     actual_revision = _resolve_local_model_revision(repo, model_revision)
+    _require_local_model_files(repo, actual_revision)
 
     # Resolve LoRAs before writing the upload, so rejected requests leave no
     # orphaned temporary file behind.

@@ -56,6 +56,15 @@ def test_inventory_marks_the_exact_cached_qualified_revision_ready():
     with (
         patch("backend.main.cache.status_snapshot", side_effect=cache_status),
         patch("backend.main.cache.snapshot_revision", return_value=RUNTIME_REVISION),
+        patch(
+            "backend.main.cache.model_files_readiness",
+            return_value={
+                "ready": True,
+                "revision": RUNTIME_REVISION,
+                "error_code": None,
+                "reason": None,
+            },
+        ),
         patch("backend.main.gen_manager.is_available", return_value=True),
     ):
         target = next(
@@ -64,6 +73,7 @@ def test_inventory_marks_the_exact_cached_qualified_revision_ready():
 
     assert target["model_revision"] == RUNTIME_REVISION
     assert target["qualified_revision_match"] is True
+    assert target["readiness"]["ready"] is True
     assert target["execution_ready"] is True
 
 

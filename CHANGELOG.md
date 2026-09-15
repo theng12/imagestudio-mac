@@ -8,6 +8,33 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - **MINOR** (1.1.x → 1.2.x) — new engine / new feature / new model family. **Re-run "Install Generation"** to pick up new Python deps.
 - **PATCH** (1.2.0 → 1.2.1) — bugfix / UI tweak / catalog entry within an existing family. **Just run Update** from the Pinokio sidebar.
 
+## [1.32.2] — 2026-09-15
+
+### Fixed — model readiness checks every required weight shard
+
+- A Hugging Face snapshot could report `cache.state: "cached"` and
+  `execution_ready: true` when one weight existed but another indexed shard
+  was missing, linked to a missing blob, empty, or unreadable. Generation then
+  failed immediately inside `load_safetensors` and repeated dispatches kept
+  selecting the same broken model.
+- Catalog rows now include a structured `readiness` result with the immutable
+  revision, `ready`, `error_code`, and a safe reason. The probe reads each
+  safetensors index and one byte from every required weight shard; it performs
+  no model load or multi-gigabyte checksum. A partial download remains
+  unavailable even when its existing files are readable.
+- Text-to-image, image-to-image, and edit submissions recheck the selected
+  immutable snapshot before queueing, and workers repeat the check immediately
+  before dispatch. Missing files fail with the typed
+  `MODEL_FILES_UNAVAILABLE` code. Download jobs use the existing resumable
+  Hugging Face flow and report that same code if the repaired snapshot is still
+  unusable instead of claiming completion.
+- The Web UI now honors server-side model readiness when enabling generation
+  and renders the typed submission message. Existing cache-state, dependency,
+  model-revision, runtime compatibility, memory, and generation behavior are
+  otherwise unchanged. This patch adds no dependency or model download;
+  ordinary Update is enough. Verification: 211 tests passed without running
+  inference.
+
 ## [1.32.1] — 2026-09-03
 
 ### Changed — local development hygiene

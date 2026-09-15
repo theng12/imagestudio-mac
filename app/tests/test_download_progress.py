@@ -88,6 +88,7 @@ def test_unreachable_hf_api_falls_back_to_the_catalog_size(monkeypatch):
     )
     monkeypatch.setattr(downloads.settings, "get_hf_token", lambda: None)
     monkeypatch.setattr(downloads.cache, "ensure_hub_dir", lambda: None)
+    monkeypatch.setattr(downloads.cache, "require_model_files", lambda repo: None)
     monkeypatch.setattr(downloads, "snapshot_download", lambda **kw: "/tmp/x")
     monkeypatch.setattr(downloads.cache, "disk_bytes", lambda _r: 0)
     monkeypatch.setattr(downloads.cache, "incomplete_bytes", lambda _r: 0)

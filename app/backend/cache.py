@@ -8,6 +8,7 @@ Pure-ish functions that look at the on-disk Hugging Face cache and answer:
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
@@ -71,6 +72,19 @@ _WEIGHT_EXTENSIONS = (
     ".pt", ".pth", ".npz", ".mlpackage",
 )
 
+MODEL_FILES_UNAVAILABLE = "MODEL_FILES_UNAVAILABLE"
+MODEL_FILES_UNAVAILABLE_REASON = (
+    "One or more required model files are missing or unreadable."
+)
+
+
+class ModelFilesUnavailable(RuntimeError):
+    error_code = MODEL_FILES_UNAVAILABLE
+
+    def __init__(self, reason: str = MODEL_FILES_UNAVAILABLE_REASON) -> None:
+        self.reason = reason
+        super().__init__(f"{self.error_code}: {reason}")
+
 
 def has_weight_files(repo: str) -> bool:
     """True if any snapshot under this repo contains at least one file with
@@ -115,6 +129,92 @@ def snapshot_path(repo: str, revision: str | None) -> Path | None:
         return None
     snapshot = repo_cache_dir(repo) / "snapshots" / revision
     return snapshot.resolve() if snapshot.is_dir() else None
+
+
+def _weight_path(path: Path) -> bool:
+    lower = path.name.lower()
+    return any(lower.endswith(ext) for ext in _WEIGHT_EXTENSIONS)
+
+
+def _readable_nonempty(path: Path) -> bool:
+    """Probe availability without hashing or reading a multi-GB weight."""
+    try:
+        with path.open("rb") as handle:
+            return bool(handle.read(1))
+    except (OSError, ValueError):
+        return False
+
+
+def _indexed_weight_paths(snapshot: Path) -> tuple[set[Path], bool]:
+    """Return every shard named by safetensors indexes in this snapshot.
+
+    An index is the source of truth for sharded checkpoints: finding one good
+    shard is insufficient when its companion is absent. Index files are small
+    metadata, so reading them is bounded and avoids hashing any model weight.
+    """
+    required: set[Path] = set()
+    try:
+        indexes = tuple(snapshot.rglob("*.safetensors.index.json"))
+    except (FileNotFoundError, PermissionError, OSError):
+        return required, False
+    for index in indexes:
+        try:
+            with index.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+            return required, False
+        weight_map = payload.get("weight_map") if isinstance(payload, dict) else None
+        if not isinstance(weight_map, dict) or not weight_map:
+            return required, False
+        for relative in weight_map.values():
+            if not isinstance(relative, str):
+                return required, False
+            shard = Path(relative)
+            if shard.is_absolute() or ".." in shard.parts:
+                return required, False
+            required.add(index.parent / shard)
+    return required, True
+
+
+def model_files_readiness(repo: str, revision: str | None = None) -> dict:
+    """Verify that an immutable snapshot's required weight shards can be opened.
+
+    This deliberately reads only safetensors index metadata plus one byte from
+    each weight file. It detects missing shards, dangling cache symlinks, empty
+    files, and read/permission failures without checksumming model contents on
+    the catalog polling path.
+    """
+    actual_revision = revision or snapshot_revision(repo)
+    snapshot = snapshot_path(repo, actual_revision)
+    if snapshot is None:
+        return {
+            "ready": False,
+            "revision": actual_revision,
+            "error_code": MODEL_FILES_UNAVAILABLE,
+            "reason": MODEL_FILES_UNAVAILABLE_REASON,
+        }
+
+    indexed, indexes_ok = _indexed_weight_paths(snapshot)
+    try:
+        discovered = {path for path in snapshot.rglob("*") if _weight_path(path)}
+    except (FileNotFoundError, PermissionError, OSError):
+        discovered = set()
+        indexes_ok = False
+    required = indexed | discovered
+    ready = indexes_ok and bool(required) and all(_readable_nonempty(path) for path in required)
+    return {
+        "ready": ready,
+        "revision": actual_revision,
+        "error_code": None if ready else MODEL_FILES_UNAVAILABLE,
+        "reason": None if ready else MODEL_FILES_UNAVAILABLE_REASON,
+    }
+
+
+def require_model_files(repo: str, revision: str | None = None) -> dict:
+    readiness = model_files_readiness(repo, revision)
+    if not readiness["ready"]:
+        raise ModelFilesUnavailable(str(readiness["reason"]))
+    return readiness
 
 
 def cache_state(repo: str) -> str:

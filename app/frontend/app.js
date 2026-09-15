@@ -683,6 +683,9 @@ function studio() {
     get selectedReadiness() {
       const m = this.selectedModel;
       if (!m) return { state: "empty", label: "Choose a model", detail: "Download a model to begin." };
+      if (m.readiness?.error_code === "MODEL_FILES_UNAVAILABLE") {
+        return { state: "blocked", label: "Model files need repair", detail: m.readiness.reason || "Use Repair on the Models tab, then re-check." };
+      }
       if (m.runtime_compatible === false) {
         return { state: "blocked", label: "Conversion format unsupported", detail: m.runtime_note || "This model needs a compatible local loader." };
       }
@@ -695,6 +698,9 @@ function studio() {
       }
       if (engine && !engine.ready) {
         return { state: "install", label: "Engine needs repair", detail: "One or more required packages are missing." };
+      }
+      if (m.readiness?.ready === false) {
+        return { state: "blocked", label: "Model is not ready", detail: m.readiness.reason || "Re-check this model before generating." };
       }
       return { state: "ready", label: "Ready on this Mac", detail: `${m.engine === "diffusers" ? "PyTorch / MPS" : "Apple MLX"} engine is installed.` };
     },
@@ -852,6 +858,8 @@ function studio() {
     },
     isModelReady(repo) {
       if (!repo) return false;
+      const m = (this.models || []).find(x => x.repo === repo);
+      if (typeof m?.readiness?.ready === "boolean") return m.readiness.ready;
       const e = this.modelEngine(repo);
       if (!e) return true;   // unknown engine → assume ready; API will 503 if not
       return !!e.ready;
@@ -1868,7 +1876,7 @@ function studio() {
           if (!r.ok) {
             const err = await r.json().catch(() => ({}));
             this.pushToast({ kind: "error", icon: "✗", title: "Submit failed",
-              body: err.detail || ("HTTP " + r.status) });
+              body: err.detail?.message || err.detail || ("HTTP " + r.status) });
             break;
           }
           const { job } = await r.json();

@@ -150,7 +150,12 @@ publication, and returns model/runtime, worker/machine, dimensions, steps,
 resolved seed, media, size, checksum, and runtime evidence.
 
 The protected model inventory reports the cached revision, qualification match,
-execution readiness, and pinned upstream Apache-2.0 evidence. Health reports
+execution readiness, and pinned upstream Apache-2.0 evidence. Each catalog row
+also includes `readiness: {ready, revision, error_code, reason}`. Readiness
+requires a complete cache, the qualified revision, an available runtime, and
+every safetensors shard named by the immutable snapshot's indexes to be
+present, non-empty, and readable. `MODEL_FILES_UNAVAILABLE` means the existing
+download flow should be run again before dispatch. Health reports
 only aggregate generation availability and queue state—never prompts, job IDs,
 or asset paths. The GenStudio minimum tier is 8 GB unified memory, with 16 GB
 recommended for stronger operating headroom. The durable benchmark was
@@ -233,7 +238,7 @@ No deps beyond stdlib — runs without the venv.
 
 ```
 GET  /api/health
-GET  /api/catalog                  # models + families + live cache state
+GET  /api/catalog                  # models + families + cache and model readiness
 GET  /api/fleet/activity           # authenticated, sanitized activity for Studio Hub only
 GET  /api/fleet/jobs/{job_id}/details       # authenticated, on-demand job content
 GET  /api/fleet/jobs/{job_id}/media/{handle} # authenticated, short-lived media read
